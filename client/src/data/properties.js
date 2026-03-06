@@ -1,0 +1,80 @@
+export const MOCK_PROPERTIES = [
+  {
+    id: 1,
+    title: "The Sky Villa Collection",
+    price: "₹4.5 Cr",
+    bhk: "4 BHK",
+    area: "3,200 sq.ft.",
+    location: "Sector 37D, Gurugram",
+    dealer: "Elite Homes",
+    tags: ["Signature", "New Launch"],
+    image: "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1200&q=80",
+    type: "Apartment",
+    status: "Under Construction"
+  },
+  {
+    id: 2,
+    title: "Serenity Independent Floors",
+    price: "₹1.8 Cr",
+    bhk: "3 BHK",
+    area: "1,850 sq.ft.",
+    location: "Sohna Road, Gurugram",
+    dealer: "Direct Owner",
+    tags: ["Ready to move"],
+    image: "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=1200&q=80",
+    type: "Builder Floor",
+    status: "Ready"
+  },
+  {
+    id: 3,
+    title: "Urban Loft Studio",
+    price: "₹65 Lacs",
+    bhk: "1 RK",
+    area: "600 sq.ft.",
+    location: "Sector 102, Gurugram",
+    dealer: "Urban Spaces",
+    tags: ["High ROI"],
+    image: "https://images.unsplash.com/photo-1600607687931-cebf0746e426?auto=format&fit=crop&w=1200&q=80",
+    type: "Studio",
+    status: "Ready"
+  },
+  {
+    id: 4,
+    title: "Golf Course Penthouse",
+    price: "₹12.5 Cr",
+    bhk: "5 BHK",
+    area: "6,500 sq.ft.",
+    location: "Golf Course Road, Gurugram",
+    dealer: "Luxury Estates",
+    tags: ["Bespoke", "Premium"],
+    image: "https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?auto=format&fit=crop&w=1200&q=80",
+    type: "Apartment",
+    status: "Ready"
+  },
+  {
+    id: 5,
+    title: "Botanica Villas",
+    price: "₹5.2 Cr",
+    bhk: "4 BHK",
+    area: "4,000 sq.ft.",
+    location: "Sector 36A, Gurugram",
+    dealer: "Greenfield Devs",
+    tags: ["Eco-Friendly"],
+    image: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80",
+    type: "Villa",
+    status: "Under Construction"
+  },
+  {
+    id: 6,
+    title: "Apex Corporate Tower",
+    price: "₹2.2 Cr",
+    bhk: "Office",
+    area: "1,200 sq.ft.",
+    location: "Cyber Hub, Gurugram",
+    dealer: "Commercial Experts",
+    tags: ["Grade A"],
+    image: "https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=1200&q=80",
+    type: "Commercial",
+    status: "Ready"
+  }
+];

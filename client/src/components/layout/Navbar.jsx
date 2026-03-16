@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Home, Menu, X } from 'lucide-react';
 import Button from '../ui/Button';
 
-const Navbar = ({ onViewChange }) => {
+const Navbar = ({ onViewChange, currentView, onPostProperty, isLoggedIn }) => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
 
@@ -41,8 +41,13 @@ const Navbar = ({ onViewChange }) => {
 
           {/* Right Actions */}
           <div className="hidden md:flex items-center gap-3">
-            <button className={`text-sm font-semibold hover:opacity-70 transition-opacity ${isScrolled ? 'text-slate-900' : 'text-slate-900'}`}>Sign In</button>
-            <Button variant="primary" className="!py-2.5 !px-5 !text-sm">Post Property</Button>
+            <button
+              onClick={() => onViewChange('login')}
+              className={`text-sm font-semibold hover:opacity-70 transition-opacity ${currentView === 'login' ? 'opacity-50 pointer-events-none' : ''} ${isScrolled ? 'text-slate-900' : 'text-slate-900'}`}
+            >
+              Sign In
+            </button>
+            <Button variant="primary" className="!py-2.5 !px-5 !text-sm" onClick={onPostProperty}>Post Property</Button>
           </div>
 
           {/* Mobile Toggle */}

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Check, MapPin, Home, Camera, Layers, ArrowLeft, LocateFixed, Loader2, Pencil } from 'lucide-react';
 
@@ -36,6 +36,7 @@ const LOCATION_ADVANTAGE_OPTIONS = [
 export default function PropertyFormPage() {
   const navigate = useNavigate();
   const { state } = useLocation();
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
   const initial = state || { lookingTo: 'sell', propertyCategory: 'residential', selectedType: '', role: 'owner' };
 
   const [currentStep, setCurrentStep] = useState(1);
@@ -75,6 +76,9 @@ export default function PropertyFormPage() {
   const [amenityOtherValue, setAmenityOtherValue] = useState('');
   const [locating, setLocating] = useState(false);
   const [locError, setLocError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const [submitSuccess, setSubmitSuccess] = useState('');
 
   const handleUseCurrentLocation = () => {
     if (!navigator.geolocation) {
@@ -154,6 +158,53 @@ export default function PropertyFormPage() {
   const handleContinue = () => {
     if (!validateStep()) return;
     setCurrentStep(s => s + 1);
+  };
+
+  const sanitizePayload = (data) => {
+    const payload = {};
+
+    Object.entries(data).forEach(([key, value]) => {
+      if (typeof value === 'string') {
+        payload[key] = value.trim();
+      } else {
+        payload[key] = value;
+      }
+    });
+
+    return payload;
+  };
+
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    setSubmitError('');
+    setSubmitSuccess('');
+
+    try {
+      const payload = sanitizePayload(form);
+      const response = await fetch(`${API_BASE_URL}/api/properties`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || 'Could not submit property.');
+      }
+
+      setSubmitSuccess('Property submitted successfully.');
+
+      setTimeout(() => {
+        navigate('/');
+      }, 1000);
+    } catch (error) {
+      setSubmitError(error.message || 'Could not submit property.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const stepVariants = {
@@ -248,7 +299,7 @@ export default function PropertyFormPage() {
 
             {/* Step 1 — Basic Details */}
             {currentStep === 1 && (
-              <motion.div key="s1" variants={stepVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.22 }}>
+              <Motion.div key="s1" variants={stepVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.22 }}>
                 <h2 className="text-2xl font-black text-slate-900 mb-0.5">Welcome back,</h2>
                 <p className="text-slate-500 text-sm mb-8">Fill out basic details about your property.</p>
 
@@ -308,12 +359,12 @@ export default function PropertyFormPage() {
                   className="mt-8 bg-slate-900 hover:bg-slate-800 text-white font-bold px-10 py-3.5 rounded-xl transition-colors shadow-lg shadow-slate-900/20">
                   Continue
                 </button>
-              </motion.div>
+              </Motion.div>
             )}
 
             {/* Step 2 — Location */}
             {currentStep === 2 && (
-              <motion.div key="s2" variants={stepVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.22 }}>
+              <Motion.div key="s2" variants={stepVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.22 }}>
                 <h2 className="text-2xl font-black text-slate-900 mb-0.5">Location Details</h2>
                 <p className="text-slate-500 text-sm mb-5">Tell us where your property is located.</p>
 
@@ -370,12 +421,12 @@ export default function PropertyFormPage() {
                     Continue
                   </button>
                 </div>
-              </motion.div>
+              </Motion.div>
             )}
 
             {/* Step 3 — Property Profile */}
             {currentStep === 3 && (
-              <motion.div key="s3" variants={stepVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.22 }}>
+              <Motion.div key="s3" variants={stepVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.22 }}>
                 <h2 className="text-2xl font-black text-slate-900 mb-0.5">Tell us about your property</h2>
                 <p className="text-slate-500 text-sm mb-8">Provide details to attract the right buyers.</p>
 
@@ -754,12 +805,12 @@ export default function PropertyFormPage() {
                     Continue
                   </button>
                 </div>
-              </motion.div>
+              </Motion.div>
             )}
 
             {/* Step 4 — Photos */}
             {currentStep === 4 && (
-              <motion.div key="s4" variants={stepVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.22 }}>
+              <Motion.div key="s4" variants={stepVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.22 }}>
                 <h2 className="text-2xl font-black text-slate-900 mb-0.5">Photos, Videos & Voice-over</h2>
                 <p className="text-slate-500 text-sm mb-8">Properties with photos get 10× more enquiries.</p>
 
@@ -786,12 +837,12 @@ export default function PropertyFormPage() {
                     Continue
                   </button>
                 </div>
-              </motion.div>
+              </Motion.div>
             )}
 
             {/* Step 5 — Amenities */}
             {currentStep === 5 && (
-              <motion.div key="s5" variants={stepVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.22 }}>
+              <Motion.div key="s5" variants={stepVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.22 }}>
                 <h2 className="text-2xl font-black text-slate-900 mb-1">Add amenities/unique features</h2>
                 <p className="text-slate-500 text-sm mb-8">These fields are used to populate USP & captions. All fields on this page are optional.</p>
 
@@ -987,13 +1038,20 @@ export default function PropertyFormPage() {
                     className="px-8 py-3.5 rounded-xl border-2 border-slate-200 text-slate-600 font-bold text-sm hover:border-slate-400 transition-colors">
                     Back
                   </button>
+                  {submitError && (
+                    <p className="text-red-500 text-sm font-semibold self-center">{submitError}</p>
+                  )}
+                  {submitSuccess && (
+                    <p className="text-emerald-600 text-sm font-semibold self-center">{submitSuccess}</p>
+                  )}
                   <button
-                    onClick={() => alert('🎉 Property submitted successfully!')}
-                    className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-10 py-3.5 rounded-xl transition-colors shadow-lg shadow-slate-900/20">
-                    Save and Submit
+                    onClick={handleSubmit}
+                    disabled={submitting}
+                    className="bg-slate-900 hover:bg-slate-800 disabled:bg-slate-500 disabled:cursor-not-allowed text-white font-bold px-10 py-3.5 rounded-xl transition-colors shadow-lg shadow-slate-900/20">
+                    {submitting ? 'Saving...' : 'Save and Submit'}
                   </button>
                 </div>
-              </motion.div>
+              </Motion.div>
             )}
 
           </AnimatePresence>

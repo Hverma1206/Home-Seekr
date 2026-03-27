@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import { Phone, User, ArrowLeft, CheckCircle, Shield } from 'lucide-react';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
@@ -31,7 +31,6 @@ const LoginSignupPage = ({ onViewChange, onLoginSuccess }) => {
     }
     setError('');
     setLoading(true);
-    // Simulated API delay — replace with real OTP API call
     await new Promise((r) => setTimeout(r, 1200));
     setLoading(false);
     setStep('otp');
@@ -61,7 +60,6 @@ const LoginSignupPage = ({ onViewChange, onLoginSuccess }) => {
     }
     setError('');
     setLoading(true);
-    // Simulated verification — replace with real OTP verification
     await new Promise((r) => setTimeout(r, 1200));
     setLoading(false);
     setStep('success');

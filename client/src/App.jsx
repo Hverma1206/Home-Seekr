@@ -10,6 +10,7 @@ import PropertyDetailsPage from './pages/PropertyDetailsPage';
 import LoginSignupPage from './pages/LoginSignupPage';
 import PostPropertyPage from './pages/PostPropertyPage';
 import PropertyFormPage from './pages/PropertyFormPage';
+import OTPVerificationPage from './pages/OTPVerificationPage';
 
 function MainLayout() {
   const navigate = useNavigate();
@@ -84,6 +85,7 @@ export default function App() {
     <Routes>
       <Route path="/post-property" element={<PostPropertyPage />} />
       <Route path="/post-property/form" element={<PropertyFormPage />} />
+      <Route path="/verify-otp" element={<OTPVerificationPage />} />
       <Route path="/*" element={<MainLayout />} />
     </Routes>
   );

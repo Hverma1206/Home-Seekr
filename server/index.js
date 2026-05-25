@@ -4,6 +4,7 @@ import dotenv from 'dotenv'
 import { connectDB } from './dbconnect.js'
 import healthRoutes from './routes/healthRoutes.js'
 import propertyRoutes from './routes/propertyRoutes.js'
+import userRoutes from './routes/userRoutes.js'
 import { notFound, errorHandler } from './middleware/errorMiddleware.js'
 
 dotenv.config()
@@ -16,6 +17,7 @@ app.use(express.json())
 
 app.use('/api/health', healthRoutes)
 app.use('/api/properties', propertyRoutes)
+app.use('/api/auth', userRoutes)
 
 app.use(notFound)
 app.use(errorHandler)

@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Phone, User, ArrowLeft, CheckCircle, Shield } from 'lucide-react';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
+import { authService } from '../services/authService';
 
 const LoginSignupPage = ({ onViewChange, onLoginSuccess }) => {
   const [step, setStep] = useState('input'); // 'input' | 'otp' | 'success'
@@ -31,10 +32,17 @@ const LoginSignupPage = ({ onViewChange, onLoginSuccess }) => {
     }
     setError('');
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 1200));
-    setLoading(false);
-    setStep('otp');
-    setResendTimer(30);
+    try {
+      await authService.sendOTP(mobile);
+      setStep('otp');
+      setResendTimer(30);
+    } catch (err) {
+      const errorMsg =
+        err.response?.data?.message || 'Failed to send OTP. Please try again.';
+      setError(errorMsg);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleOTPChange = (index, value) => {
@@ -60,25 +68,49 @@ const LoginSignupPage = ({ onViewChange, onLoginSuccess }) => {
     }
     setError('');
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 1200));
-    setLoading(false);
-    setStep('success');
-    setTimeout(() => {
-      if (onLoginSuccess) {
-        onLoginSuccess();
-      } else {
-        onViewChange('home');
-      }
-    }, 2200);
+    try {
+      const response = await authService.verifyOTP({
+        phoneNumber: mobile,
+        otp: otp.join(''),
+        firstName: name.split(' ')[0],
+        lastName: name.split(' ').slice(1).join(' '),
+      });
+
+      localStorage.setItem('token', response.data.data.token);
+      localStorage.setItem('user', JSON.stringify(response.data.data.user));
+
+      setStep('success');
+      setTimeout(() => {
+        if (onLoginSuccess) {
+          onLoginSuccess();
+        } else {
+          onViewChange('home');
+        }
+      }, 2200);
+    } catch (err) {
+      const errorMsg =
+        err.response?.data?.message || 'Failed to verify OTP. Please try again.';
+      setError(errorMsg);
+      setOtp(['', '', '', '', '', '']);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleResendOTP = async () => {
     if (resendTimer > 0) return;
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 800));
-    setLoading(false);
-    setOtp(['', '', '', '', '', '']);
-    setResendTimer(30);
+    try {
+      await authService.resendOTP(mobile);
+      setOtp(['', '', '', '', '', '']);
+      setResendTimer(30);
+    } catch (err) {
+      const errorMsg =
+        err.response?.data?.message || 'Failed to resend OTP. Please try again.';
+      setError(errorMsg);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const resetToInput = () => {

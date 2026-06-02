@@ -4,6 +4,8 @@ import { fadeUp } from '../animations/variants';
 import Badge from './ui/Badge';
 
 const PropertyCard = ({ property, onClick }) => {
+  const tags = Array.isArray(property.tags) ? property.tags : [];
+
   return (
     <motion.div 
       variants={fadeUp}
@@ -20,7 +22,7 @@ const PropertyCard = ({ property, onClick }) => {
         <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 via-transparent to-transparent opacity-80" />
         
         <div className="absolute top-4 left-4 flex flex-wrap gap-2">
-          {property.tags.map((tag, idx) => (
+          {tags.map((tag, idx) => (
             <Badge key={idx} variant={tag === 'Signature' || tag === 'Bespoke' ? 'dark' : 'light'}>
               {tag}
             </Badge>

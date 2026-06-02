@@ -1,13 +1,14 @@
 import { motion } from 'framer-motion';
 import { ArrowUpRight, Building } from 'lucide-react';
 import { staggerContainer } from '../animations/variants';
-import { MOCK_PROPERTIES } from '../data/properties';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
 import PropertyCard from '../components/PropertyCard';
 import SearchBar from '../components/SearchBar';
 
-const HomePage = ({ onViewChange, onPropertySelect }) => {
+const HomePage = ({ onViewChange, onPropertySelect, properties = [], locationMeta, isLoading, locationError }) => {
+  const featured = properties.slice(0, 3);
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pb-20">
       
@@ -32,6 +33,11 @@ const HomePage = ({ onViewChange, onPropertySelect }) => {
               transition={{ duration: 0.8 }}
             >
               <Badge variant="light" className="mb-6 inline-block !px-4 !py-2">Premium Real Estate Network</Badge>
+              {locationMeta?.city && (
+                <p className="text-xs uppercase tracking-[0.4em] text-white/80 font-semibold mb-4">
+                  Now serving {locationMeta.city}
+                </p>
+              )}
               <h1 className="text-5xl md:text-7xl lg:text-8xl font-black text-white mb-6 tracking-tighter leading-[1.1]">
                 Find the place <br className="hidden md:block"/> that fits your life.
               </h1>
@@ -60,6 +66,9 @@ const HomePage = ({ onViewChange, onPropertySelect }) => {
             <div className="max-w-2xl">
               <h2 className="text-4xl md:text-5xl font-black text-slate-900 tracking-tighter mb-4">The Signature <br/> Collection.</h2>
               <p className="text-lg text-slate-500 font-medium">Curated homes of exceptional quality and design, handpicked by our expert real estate curators.</p>
+              {locationError && (
+                <p className="text-xs text-slate-400 font-semibold mt-3">{locationError}</p>
+              )}
             </div>
             <Button variant="secondary" onClick={() => onViewChange('listings')} icon={<ArrowUpRight className="w-5 h-5"/>}>
               View Collection
@@ -73,9 +82,13 @@ const HomePage = ({ onViewChange, onPropertySelect }) => {
             viewport={{ once: true, margin: "-100px" }}
             className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"
           >
-            {MOCK_PROPERTIES.slice(0, 3).map(prop => (
-              <PropertyCard key={prop.id} property={prop} onClick={onPropertySelect} />
-            ))}
+            {isLoading && !featured.length ? (
+              <div className="text-slate-400 font-semibold">Loading tailored listings...</div>
+            ) : (
+              featured.map(prop => (
+                <PropertyCard key={prop.id} property={prop} onClick={onPropertySelect} />
+              ))
+            )}
           </motion.div>
         </div>
       </section>

@@ -1,12 +1,15 @@
 import { motion } from 'framer-motion';
 import { Filter, ChevronLeft, ChevronRight } from 'lucide-react';
 import { staggerContainer } from '../animations/variants';
-import { MOCK_PROPERTIES } from '../data/properties';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
 import PropertyCard from '../components/PropertyCard';
 
-const ListingsPage = ({ onPropertySelect }) => {
+const ListingsPage = ({ onPropertySelect, properties = [], locationMeta, isLoading, locationError }) => {
+  const headlineCity = locationMeta?.city || 'Your Area';
+  const headlineLocality = locationMeta?.locality;
+  const listingsCount = locationMeta?.total || properties.length;
+
   return (
     <motion.div 
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -17,8 +20,13 @@ const ListingsPage = ({ onPropertySelect }) => {
         {/* Editorial Sidebar Filters */}
         <div className="w-full lg:w-80 shrink-0">
           <div className="sticky top-32">
-            <h1 className="text-4xl font-black text-slate-900 tracking-tighter mb-2">Gurugram</h1>
-            <p className="text-slate-500 font-medium mb-10">1,245 Premium Properties</p>
+            <h1 className="text-4xl font-black text-slate-900 tracking-tighter mb-2">{headlineCity}</h1>
+            <p className="text-slate-500 font-medium mb-6">
+              {headlineLocality ? `${headlineLocality} • ` : ''}{listingsCount} Premium Properties
+            </p>
+            {locationError && (
+              <p className="text-xs text-slate-400 font-semibold mb-6">{locationError}</p>
+            )}
 
             <div className="space-y-8 pr-6">
               <div>
@@ -83,12 +91,13 @@ const ListingsPage = ({ onPropertySelect }) => {
             variants={staggerContainer} initial="hidden" animate="show"
             className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 gap-8"
           >
-            {MOCK_PROPERTIES.map(prop => (
-              <PropertyCard key={prop.id} property={prop} onClick={onPropertySelect} />
-            ))}
-            {MOCK_PROPERTIES.map(prop => (
-              <PropertyCard key={prop.id + '-dup'} property={{...prop, id: prop.id + 10}} onClick={onPropertySelect} />
-            ))}
+            {isLoading && !properties.length ? (
+              <div className="text-slate-400 font-semibold">Loading listings near you...</div>
+            ) : (
+              properties.map(prop => (
+                <PropertyCard key={prop.id} property={prop} onClick={onPropertySelect} />
+              ))
+            )}
           </motion.div>
           
           {/* Pagination */}

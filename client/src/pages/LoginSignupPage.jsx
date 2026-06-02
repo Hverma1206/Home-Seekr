@@ -1,11 +1,16 @@
 import { useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Phone, User, ArrowLeft, CheckCircle, Shield } from 'lucide-react';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
 import { authService } from '../services/authService';
+import { useAuth } from '../hooks/useAuth';
 
-const LoginSignupPage = ({ onViewChange, onLoginSuccess }) => {
+const LoginSignupPage = ({ onLoginSuccess }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { login } = useAuth();
   const [step, setStep] = useState('input'); // 'input' | 'otp' | 'success'
   const [name, setName] = useState('');
   const [mobile, setMobile] = useState('');
@@ -76,15 +81,18 @@ const LoginSignupPage = ({ onViewChange, onLoginSuccess }) => {
         lastName: name.split(' ').slice(1).join(' '),
       });
 
-      localStorage.setItem('token', response.data.data.token);
-      localStorage.setItem('user', JSON.stringify(response.data.data.user));
+      const token = response.data.data.token;
+      const user = response.data.data.user;
+      const redirectTo = location.state?.from || '/';
+
+      login({ token, user });
 
       setStep('success');
       setTimeout(() => {
         if (onLoginSuccess) {
-          onLoginSuccess();
+          onLoginSuccess(redirectTo);
         } else {
-          onViewChange('home');
+          navigate(redirectTo, { replace: true });
         }
       }, 2200);
     } catch (err) {

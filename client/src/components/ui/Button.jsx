@@ -1,6 +1,15 @@
 import { motion } from 'framer-motion';
 
-const Button = ({ children, variant = 'primary', className = "", onClick, icon }) => {
+const Button = ({
+  children,
+  variant = 'primary',
+  className = "",
+  onClick,
+  icon,
+  type = 'button',
+  disabled = false,
+  ...rest
+}) => {
   const baseStyle = "px-6 py-3.5 rounded-full font-semibold transition-all duration-300 flex items-center justify-center gap-2";
   const variants = {
     primary: "bg-slate-900 text-white hover:bg-slate-800 shadow-xl shadow-slate-900/20",
@@ -14,6 +23,9 @@ const Button = ({ children, variant = 'primary', className = "", onClick, icon }
       whileTap={{ scale: 0.98 }}
       className={`${baseStyle} ${variants[variant]} ${className}`}
       onClick={onClick}
+      type={type}
+      disabled={disabled}
+      {...rest}
     >
       {children}
       {icon && <span className="ml-1">{icon}</span>}

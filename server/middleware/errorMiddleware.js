@@ -3,6 +3,13 @@ export const notFound = (req, res, _next) => {
 }
 
 export const errorHandler = (err, _req, res, _next) => {
+  if (err.code === 11000) {
+    return res.status(409).json({
+      message: 'Duplicate field value',
+      field: Object.keys(err.keyValue || {})[0],
+    })
+  }
+
   if (err.name === 'ValidationError') {
     return res.status(400).json({
       message: 'Validation failed',

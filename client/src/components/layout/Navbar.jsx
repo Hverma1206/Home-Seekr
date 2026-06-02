@@ -1,16 +1,54 @@
-import { useState, useEffect } from 'react';
-import { Home, Menu, X } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Home, Menu, X, ChevronDown, LogOut, LayoutDashboard, UserCog } from 'lucide-react';
 import Button from '../ui/Button';
+import { useAuth } from '../../hooks/useAuth';
 
-const Navbar = ({ onViewChange, currentView, onPostProperty, isLoggedIn }) => {
+const Navbar = ({ onViewChange, currentView, onPostProperty }) => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const dropdownRef = useRef(null);
+  const navigate = useNavigate();
+  const { user, isAuthenticated, isLoading, logout } = useAuth();
+
+  const displayName = user?.firstName
+    ? `${user.firstName} ${user.lastName || ''}`.trim()
+    : user?.phoneNumber || 'Account';
+
+  const initials = displayName
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase();
 
   useEffect(() => {
     const handleScroll = () => setIsScrolled(window.scrollY > 50);
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setProfileOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleLoginClick = () => {
+    setProfileOpen(false);
+    onViewChange('login');
+  };
+
+  const handleLogout = () => {
+    setProfileOpen(false);
+    logout({ redirectTo: '/' });
+  };
 
   return (
     <nav className={`fixed top-0 left-0 right-0 z-50 px-4 transition-all duration-500 ${isScrolled ? 'pt-4' : 'pt-6'}`}>
@@ -41,12 +79,81 @@ const Navbar = ({ onViewChange, currentView, onPostProperty, isLoggedIn }) => {
 
           {/* Right Actions */}
           <div className="hidden md:flex items-center gap-3">
-            <button
-              onClick={() => onViewChange('login')}
-              className={`text-sm font-semibold hover:opacity-70 transition-opacity ${currentView === 'login' ? 'opacity-50 pointer-events-none' : ''} ${isScrolled ? 'text-slate-900' : 'text-slate-900'}`}
-            >
-              Sign In
-            </button>
+            {!isLoading && !isAuthenticated && (
+              <>
+                <button
+                  onClick={handleLoginClick}
+                  className={`text-sm font-semibold hover:opacity-70 transition-opacity ${currentView === 'login' ? 'opacity-50 pointer-events-none' : ''} ${isScrolled ? 'text-slate-900' : 'text-slate-900'}`}
+                >
+                  Login
+                </button>
+                <button
+                  onClick={handleLoginClick}
+                  className={`text-sm font-semibold hover:opacity-70 transition-opacity ${isScrolled ? 'text-slate-900' : 'text-slate-900'}`}
+                >
+                  Signup
+                </button>
+              </>
+            )}
+
+            {isAuthenticated && (
+              <div className="relative" ref={dropdownRef}>
+                <button
+                  onClick={() => setProfileOpen((open) => !open)}
+                  className="flex items-center gap-3 rounded-full bg-white/80 px-3 py-2 shadow-sm border border-white/60 hover:shadow-md transition-shadow"
+                >
+                  <div className="w-9 h-9 rounded-full bg-slate-900 text-white flex items-center justify-center text-sm font-bold overflow-hidden">
+                    {user?.profileImage ? (
+                      <img
+                        src={user.profileImage}
+                        alt={displayName}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      initials || 'U'
+                    )}
+                  </div>
+                  <div className="text-left">
+                    <p className="text-sm font-semibold text-slate-900 leading-tight">{displayName}</p>
+                    <p className="text-[11px] text-slate-500">Profile</p>
+                  </div>
+                  <ChevronDown className="w-4 h-4 text-slate-500" />
+                </button>
+
+                {profileOpen && (
+                  <div className="absolute right-0 mt-3 w-56 rounded-2xl bg-white shadow-2xl border border-slate-100 overflow-hidden">
+                    <button
+                      onClick={() => {
+                        setProfileOpen(false);
+                        navigate('/dashboard');
+                      }}
+                      className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      <LayoutDashboard className="w-4 h-4" />
+                      Dashboard
+                    </button>
+                    <button
+                      onClick={() => {
+                        setProfileOpen(false);
+                        navigate('/profile');
+                      }}
+                      className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      <UserCog className="w-4 h-4" />
+                      Edit Profile
+                    </button>
+                    <button
+                      onClick={handleLogout}
+                      className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-red-600 hover:bg-red-50"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      Logout
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
             <Button variant="primary" className="!py-2.5 !px-5 !text-sm" onClick={onPostProperty}>Post Property</Button>
           </div>
 

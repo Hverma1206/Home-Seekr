@@ -1,6 +1,12 @@
 import express from 'express'
 import rateLimit from 'express-rate-limit'
-import { sendOTP, verifyOTP, resendOTP } from '../controllers/userController.js'
+import {
+	sendOTP,
+	verifyOTP,
+	resendOTP,
+	getCurrentUser,
+} from '../controllers/userController.js'
+import { protect } from '../middleware/authMiddleware.js'
 
 const router = express.Router()
 
@@ -41,5 +47,12 @@ router.post('/verify-otp', verifyLimiter, verifyOTP)
  * @access  Public
  */
 router.post('/resend-otp', otpLimiter, resendOTP)
+
+/**
+ * @route   GET /api/auth/me
+ * @desc    Get current authenticated user
+ * @access  Private
+ */
+router.get('/me', protect, getCurrentUser)
 
 export default router

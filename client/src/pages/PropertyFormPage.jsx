@@ -101,6 +101,7 @@ export default function PropertyFormPage() {
             city:     addr.city || addr.town || addr.village || addr.county || '',
             locality: addr.suburb || addr.neighbourhood || addr.road || '',
             pincode:  addr.postcode || '',
+            geo: { type: 'Point', coordinates: [coords.longitude, coords.latitude] },
           }));
           setErrors(e => ({ ...e, city: '', locality: '', pincode: '' }));
         } catch {

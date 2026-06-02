@@ -6,6 +6,27 @@ const OTP_EXPIRY_MINUTES = 10
 const OTP_RESEND_DELAY_SECONDS = 30
 const MAX_OTP_ATTEMPTS = 5
 
+const buildUserResponse = (user) => ({
+	id: user._id,
+	phoneNumber: user.phoneNumber,
+	firstName: user.firstName || '',
+	lastName: user.lastName || '',
+	email: user.email || undefined,
+	profileImage: user.profileImage || '',
+	bio: user.bio || '',
+	isPhoneVerified: user.isPhoneVerified,
+	isActive: user.isActive,
+})
+
+const normalizeEmail = (email) => {
+	if (typeof email !== 'string') {
+		return undefined
+	}
+
+	const normalizedEmail = email.trim().toLowerCase()
+	return normalizedEmail || undefined
+}
+
 // Helper: Generate JWT token
 const generateToken = (id) => {
 	const jwtSecret = process.env.JWT_SECRET
@@ -49,6 +70,7 @@ const call2FactorAPI = async (endpoint) => {
 				timeout: 10000,
 			},
 		)
+		console.log(response.data)
 		return response.data
 	} catch (error) {
 		console.error('2Factor API Error:', error.message)
@@ -102,7 +124,7 @@ export const sendOTP = async (req, res) => {
 
 		// Call 2Factor API to send OTP
 		const apiResponse = await call2FactorAPI(
-			`/SMS/${phoneDetails.internationalNumber}/AUTOGEN`,
+			`/SMS/${phoneDetails.internationalNumber}/AUTOGEN/Homeseekrotp`,
 		)
 
 		if (apiResponse.Status !== 'Success' || !apiResponse.Details) {
@@ -123,8 +145,9 @@ export const sendOTP = async (req, res) => {
 			otpAttempts: 0,
 		}
 
-		if (email) {
-			updateData.email = email
+		const normalizedEmail = normalizeEmail(email)
+		if (normalizedEmail) {
+			updateData.email = normalizedEmail
 		}
 		if (firstName) {
 			updateData.firstName = firstName
@@ -274,8 +297,9 @@ export const verifyOTP = async (req, res) => {
 		user.isActive = true
 		user.firstName = firstName || user.firstName
 		user.lastName = lastName || user.lastName
-		if (email) {
-			user.email = email
+		const normalizedEmail = normalizeEmail(email)
+		if (normalizedEmail) {
+			user.email = normalizedEmail
 		}
 		if (password) {
 			user.password = password
@@ -285,18 +309,7 @@ export const verifyOTP = async (req, res) => {
 
 		// Generate JWT token
 		const token = generateToken(user._id)
-
-		const responseUser = {
-			id: user._id,
-			phoneNumber: user.phoneNumber,
-			firstName: user.firstName,
-			lastName: user.lastName,
-			isPhoneVerified: user.isPhoneVerified,
-		}
-
-		if (user.email) {
-			responseUser.email = user.email
-		}
+		const responseUser = buildUserResponse(user)
 
 		res.status(200).json({
 			success: true,
@@ -311,6 +324,128 @@ export const verifyOTP = async (req, res) => {
 		res.status(500).json({
 			success: false,
 			message: error.message || 'Failed to verify OTP',
+		})
+	}
+}
+
+/**
+ * @route   GET /api/auth/me
+ * @desc    Get current authenticated user
+ * @access  Private
+ */
+export const getCurrentUser = async (req, res) => {
+	try {
+		if (!req.user) {
+			return res.status(404).json({
+				success: false,
+				message: 'User not found',
+			})
+		}
+
+		return res.status(200).json({
+			success: true,
+			data: {
+				user: buildUserResponse(req.user),
+			},
+		})
+	} catch (error) {
+		return res.status(500).json({
+			success: false,
+			message: error.message || 'Failed to fetch user',
+		})
+	}
+}
+
+/**
+ * @route   PUT /api/user/profile
+ * @desc    Update user profile
+ * @access  Private
+ */
+export const updateProfile = async (req, res) => {
+	try {
+		const { name, firstName, lastName, email, phoneNumber, profileImage, bio } =
+			req.body
+
+		const user = await User.findById(req.user._id)
+		if (!user) {
+			return res.status(404).json({
+				success: false,
+				message: 'User not found',
+			})
+		}
+
+		if (name && typeof name === 'string') {
+			const parts = name.trim().split(/\s+/)
+			user.firstName = parts.shift() || ''
+			user.lastName = parts.join(' ')
+		} else {
+			if (typeof firstName === 'string') {
+				user.firstName = firstName.trim()
+			}
+			if (typeof lastName === 'string') {
+				user.lastName = lastName.trim()
+			}
+		}
+
+		const normalizedEmail = normalizeEmail(email)
+		if (normalizedEmail) {
+			const existingEmail = await User.findOne({
+				email: normalizedEmail,
+				_id: { $ne: user._id },
+			})
+			if (existingEmail) {
+				return res.status(409).json({
+					success: false,
+					message: 'Email already in use',
+				})
+			}
+			user.email = normalizedEmail
+		}
+
+		if (typeof phoneNumber === 'string' && phoneNumber.trim()) {
+			const phoneDetails = normalizeIndianMobileNumber(phoneNumber)
+			if (!phoneDetails.isValid) {
+				return res.status(400).json({
+					success: false,
+					message: 'Invalid Indian mobile number format',
+				})
+			}
+			if (phoneDetails.nationalNumber !== user.phoneNumber) {
+				const existingPhone = await User.findOne({
+					phoneNumber: phoneDetails.nationalNumber,
+					_id: { $ne: user._id },
+				})
+				if (existingPhone) {
+					return res.status(409).json({
+						success: false,
+						message: 'Phone number already in use',
+					})
+				}
+				user.phoneNumber = phoneDetails.nationalNumber
+			}
+		}
+
+		if (typeof profileImage === 'string') {
+			user.profileImage = profileImage.trim()
+		}
+
+		if (typeof bio === 'string') {
+			user.bio = bio.trim()
+		}
+
+		await user.save()
+
+		return res.status(200).json({
+			success: true,
+			message: 'Profile updated successfully',
+			data: {
+				user: buildUserResponse(user),
+			},
+		})
+	} catch (error) {
+		return res.status(500).json({
+			success: false,
+			message: error.message || 'Failed to update profile',
 		})
 	}
 }
@@ -376,7 +511,7 @@ export const resendOTP = async (req, res) => {
 
 		// Call 2Factor API to send OTP
 		const apiResponse = await call2FactorAPI(
-			`/SMS/${phoneDetails.internationalNumber}/AUTOGEN`,
+			`/SMS/${phoneDetails.internationalNumber}/AUTOGEN/Homeseekrotp`,
 		)
 
 		if (apiResponse.Status !== 'Success' || !apiResponse.Details) {

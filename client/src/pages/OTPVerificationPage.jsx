@@ -4,11 +4,13 @@ import { motion } from 'framer-motion'
 import { ArrowLeft, AlertCircle, CheckCircle, Loader } from 'lucide-react'
 import OTPInput from '../components/ui/OTPInput'
 import { authService } from '../services/authService'
+import { useAuth } from '../hooks/useAuth'
 
 export default function OTPVerificationPage() {
 	const navigate = useNavigate()
 	const location = useLocation()
 	const { state } = location
+	const { login } = useAuth()
 
 	// Form data from signup
 	const [formData, setFormData] = useState(null)
@@ -70,9 +72,9 @@ export default function OTPVerificationPage() {
 			setSuccess(true)
 			setMessage('Phone verified successfully!')
 
-			// Store token
-			localStorage.setItem('token', response.data.data.token)
-			localStorage.setItem('user', JSON.stringify(response.data.data.user))
+			const token = response.data.data.token
+			const user = response.data.data.user
+			login({ token, user })
 
 			// Redirect to dashboard after 2 seconds
 			setTimeout(() => {

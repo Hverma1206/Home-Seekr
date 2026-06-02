@@ -26,10 +26,15 @@ apiClient.interceptors.response.use(
 	(response) => response,
 	(error) => {
 		if (error.response?.status === 401) {
-			// Handle unauthorized access
 			localStorage.removeItem('token')
 			localStorage.removeItem('user')
-			window.location.href = '/login'
+			if (typeof window !== 'undefined') {
+				window.dispatchEvent(
+					new CustomEvent('auth:logout', {
+						detail: { reason: 'unauthorized' },
+					}),
+				)
+			}
 		}
 		return Promise.reject(error)
 	},
@@ -67,6 +72,16 @@ export const authService = {
 		}
 		return apiClient.post('/auth/resend-otp', payload)
 	},
+
+	/**
+	 * Get current authenticated user
+	 */
+	getMe: () => apiClient.get('/auth/me'),
+
+	/**
+	 * Update authenticated user profile
+	 */
+	updateProfile: (payload) => apiClient.put('/user/profile', payload),
 }
 
 export default apiClient

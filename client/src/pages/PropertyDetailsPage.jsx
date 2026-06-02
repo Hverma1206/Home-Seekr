@@ -9,6 +9,9 @@ import Button from '../components/ui/Button';
 const PropertyDetailsPage = ({ property, onBack }) => {
   if (!property) return null;
 
+  const tags = Array.isArray(property.tags) ? property.tags : [];
+  const dealerName = property.dealer || 'Verified Agent';
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
@@ -22,7 +25,7 @@ const PropertyDetailsPage = ({ property, onBack }) => {
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6 mb-10">
         <div className="max-w-3xl">
           <div className="flex gap-2 mb-4">
-            {property.tags.map((tag, idx) => (
+            {tags.map((tag, idx) => (
               <Badge key={idx} variant="dark">{tag}</Badge>
             ))}
             <Badge variant="accent">{property.status}</Badge>
@@ -135,11 +138,11 @@ const PropertyDetailsPage = ({ property, onBack }) => {
 
             <div className="flex items-center gap-5 mb-8 pb-8 border-b border-slate-800">
               <div className="w-16 h-16 bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-full flex items-center justify-center text-white font-black text-2xl shadow-lg">
-                {property.dealer.charAt(0)}
+                {dealerName.charAt(0)}
               </div>
               <div>
                 <p className="text-sm font-bold text-emerald-400 uppercase tracking-wider mb-1">Exclusive Agent</p>
-                <p className="text-xl font-bold">{property.dealer}</p>
+                <p className="text-xl font-bold">{dealerName}</p>
               </div>
             </div>
             

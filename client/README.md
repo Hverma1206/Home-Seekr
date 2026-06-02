@@ -1,16 +1,67 @@
-# React + Vite
+# EstateHub - 99acres Clone (Client)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Location-aware property discovery UI built with React + Vite.
 
-Currently, two official plugins are available:
+## Status (June 2, 2026)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+Completed:
+- Location-based dashboard now fetches from /api/properties?city=<userCity> (no mock data)
+- SearchBar and Listings filters wired to API (price, BHK, amenities, property type)
+- PropertyDetailsPage fetches from /api/properties/details/:id
+- Contact Owner creates a lead via /api/leads (login required)
+- Locality insights are shown on property details when available
 
-## React Compiler
+In progress:
+- Wishlist UI (save/unsave) and Wishlist page
+- Similar properties and reviews on property details
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Not started:
+- Maps integration (Mapbox/Google Maps)
+- Chat system (buyer/owner/broker/builder)
+- Property alerts (email/SMS/push)
+- Admin dashboard
+- Recommendation engine
+- Rental agreement module
 
-## Expanding the ESLint configuration
+## Run the app
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Backend (separate terminal):
+1. cd /Users/himanshuverma/d-drive/EstateHub/server
+2. npm start
+
+Frontend:
+1. cd /Users/himanshuverma/d-drive/EstateHub/client
+2. npm run dev
+
+Vite will print the local URL (usually http://localhost:5173 or 5174).
+
+## What was implemented (recent)
+
+1. Location-based dashboard
+	- Uses browser geolocation to infer city and queries /api/properties with city param.
+2. Advanced search
+	- SearchBar sends city/locality + property type.
+	- Listings sidebar applies minPrice, maxPrice, BHK, and amenities filters.
+3. Property details
+	- Loads details from /api/properties/details/:id
+	- Displays locality insights when available.
+4. Leads
+	- Contact Owner creates a lead via /api/leads (protected route).
+
+## Next steps (recommended order)
+
+1. Validate the dashboard
+	- Open the home page and confirm properties load for detected city.
+2. Verify search filters
+	- Apply min/max price, BHK, and amenities; confirm results update.
+3. Verify property details
+	- Open a property; confirm details load and locality insights render.
+4. Wishlist feature
+	- Add save/unsave actions and a saved properties page.
+5. Property detail enhancements
+	- Add similar properties and reviews sections.
+
+## Notes
+
+- Contact Owner requires login (JWT) because /api/leads is protected.
+- Sample data is seeded on server start; results should appear immediately.

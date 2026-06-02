@@ -6,7 +6,17 @@ import Button from '../components/ui/Button';
 import PropertyCard from '../components/PropertyCard';
 import SearchBar from '../components/SearchBar';
 
-const HomePage = ({ onViewChange, onPropertySelect, properties = [], locationMeta, isLoading, locationError }) => {
+const HomePage = ({
+  onViewChange,
+  onPropertySelect,
+  properties = [],
+  locationMeta,
+  isLoading,
+  locationError,
+  onSearch,
+  savedPropertyIds,
+  onToggleSave,
+}) => {
   const featured = properties.slice(0, 3);
 
   return (
@@ -43,7 +53,7 @@ const HomePage = ({ onViewChange, onPropertySelect, properties = [], locationMet
               </h1>
             </motion.div>
             
-            <SearchBar onSearch={() => onViewChange('listings')} />
+            <SearchBar onSearch={onSearch || (() => onViewChange('listings'))} />
           </div>
         </div>
       </section>
@@ -86,7 +96,13 @@ const HomePage = ({ onViewChange, onPropertySelect, properties = [], locationMet
               <div className="text-slate-400 font-semibold">Loading tailored listings...</div>
             ) : (
               featured.map(prop => (
-                <PropertyCard key={prop.id} property={prop} onClick={onPropertySelect} />
+                <PropertyCard
+                  key={prop.id}
+                  property={prop}
+                  onClick={onPropertySelect}
+                  isSaved={savedPropertyIds?.has(String(prop.id))}
+                  onToggleSave={onToggleSave}
+                />
               ))
             )}
           </motion.div>

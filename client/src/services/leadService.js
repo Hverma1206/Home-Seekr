@@ -3,7 +3,7 @@ import apiClient from './authService'
 export const leadService = {
   async createLead(propertyId, data = {}) {
     const response = await apiClient.post('/leads', {
-      property: propertyId,
+      propertyId,
       ...data,
     })
     return response.data

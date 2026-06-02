@@ -6,7 +6,7 @@ const CITIES_WITH_COORDS = {
   'Delhi': { lat: 28.6139, lng: 77.2090, range: 0.3 },
   'Gurugram': { lat: 28.4595, lng: 77.0592, range: 0.2 },
   'Noida': { lat: 28.5355, lng: 77.3910, range: 0.25 },
-  'Bangalore': { lat: 12.9716, lng: 77.5946, range: 0.3 },
+  'Bengaluru': { lat: 12.9716, lng: 77.5946, range: 0.3 },
   'Mumbai': { lat: 19.0760, lng: 72.8777, range: 0.3 },
   'Hyderabad': { lat: 17.3850, lng: 78.4867, range: 0.25 },
   'Pune': { lat: 18.5204, lng: 73.8567, range: 0.25 },
@@ -36,7 +36,7 @@ const getDistance = (lat1, lng1, lat2, lng2) => {
  * Uses Haversine distance formula
  */
 export const getCityFromCoordinates = (latitude, longitude) => {
-  let nearestCity = 'Bangalore' // Default fallback
+  let nearestCity = 'Bengaluru' // Default fallback
   let minDistance = Infinity
 
   for (const [city, coord] of Object.entries(CITIES_WITH_COORDS)) {
@@ -64,7 +64,7 @@ export const getLocationContext = (latitude, longitude) => {
   
   if (!city) {
     return {
-      city: 'Bangalore', // Default
+      city: 'Bengaluru', // Default
       locality: 'Whitefield',
       confidence: 'low',
     }
@@ -75,7 +75,7 @@ export const getLocationContext = (latitude, longitude) => {
     'Delhi': 'Sector 57',
     'Gurugram': 'Sector 57',
     'Noida': 'Sector 18',
-    'Bangalore': 'Indiranagar',
+    'Bengaluru': 'Indiranagar',
     'Mumbai': 'Bandra',
     'Hyderabad': 'Banjara Hills',
     'Pune': 'Wakad',

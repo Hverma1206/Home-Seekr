@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Check, MapPin, Home, Camera, Layers, ArrowLeft, LocateFixed, Loader2, Pencil } from 'lucide-react';
+import { propertyService } from '../services/propertyService';
+import { useAuth } from '../hooks/useAuth';
 
 const STEPS = [
   { id: 1, label: 'Basic Details',             icon: Home },
@@ -36,7 +38,7 @@ const LOCATION_ADVANTAGE_OPTIONS = [
 export default function PropertyFormPage() {
   const navigate = useNavigate();
   const { state } = useLocation();
-  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+  const { isAuthenticated } = useAuth();
   const initial = state || { lookingTo: 'sell', propertyCategory: 'residential', selectedType: '', role: 'owner' };
 
   const [currentStep, setCurrentStep] = useState(1);
@@ -45,7 +47,7 @@ export default function PropertyFormPage() {
     propertyCategory: initial.propertyCategory,
     selectedType: initial.selectedType,
     role: initial.role,
-    city: '', locality: '', landmark: '', pincode: '',
+    city: '', state: '', locality: '', landmark: '', pincode: '',
     price: '', pricePerSqYard: '', priceInWords: '',
     allInclusive: false, taxExcluded: false, priceNegotiable: false,
     plotArea: '', plotAreaUnit: 'sq.yards', carpetArea: '', builtupArea: '', superBuiltupArea: '',
@@ -67,6 +69,7 @@ export default function PropertyFormPage() {
     facingRoadWidth: '',
     facingRoadUnit: 'Feet',
     locationAdvantages: [],
+    geo: null,
   });
   const [errors, setErrors] = useState({});
   const [customInput, setCustomInput] = useState({ bedrooms: false, bathrooms: false, balconies: false });
@@ -99,11 +102,12 @@ export default function PropertyFormPage() {
           setForm(f => ({
             ...f,
             city:     addr.city || addr.town || addr.village || addr.county || '',
+            state:    addr.state || addr.state_district || '',
             locality: addr.suburb || addr.neighbourhood || addr.road || '',
             pincode:  addr.postcode || '',
             geo: { type: 'Point', coordinates: [coords.longitude, coords.latitude] },
           }));
-          setErrors(e => ({ ...e, city: '', locality: '', pincode: '' }));
+          setErrors(e => ({ ...e, city: '', state: '', locality: '', pincode: '' }));
         } catch {
           setLocError('Could not fetch location details. Please fill manually.');
         } finally {
@@ -145,6 +149,7 @@ export default function PropertyFormPage() {
     if (currentStep === 1 && !form.selectedType) e.selectedType = 'Please select a property type.';
     if (currentStep === 2) {
       if (!form.city.trim()) e.city = 'Required';
+      if (!form.state.trim()) e.state = 'Required';
       if (!form.locality.trim()) e.locality = 'Required';
       if (!form.pincode.trim()) e.pincode = 'Required';
     }
@@ -175,26 +180,32 @@ export default function PropertyFormPage() {
     return payload;
   };
 
+  const normalizeLookingTo = () => {
+    if (form.propertyCategory === 'commercial') {
+      return form.lookingTo === 'rent / lease' ? 'rent' : 'buy';
+    }
+    if (form.lookingTo === 'sell') return 'buy';
+    if (form.lookingTo === 'rent / lease') return 'rent';
+    return form.lookingTo;
+  };
+
   const handleSubmit = async () => {
+    if (!isAuthenticated) {
+      setSubmitError('Please login to post a property.');
+      navigate('/login', { state: { from: '/post-property/form' } });
+      return;
+    }
+
     setSubmitting(true);
     setSubmitError('');
     setSubmitSuccess('');
 
     try {
-      const payload = sanitizePayload(form);
-      const response = await fetch(`${API_BASE_URL}/api/properties`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
+      const payload = sanitizePayload({
+        ...form,
+        lookingTo: normalizeLookingTo(),
       });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.message || 'Could not submit property.');
-      }
+      const result = await propertyService.createProperty(payload);
 
       setSubmitSuccess('Property submitted successfully.');
 
@@ -202,7 +213,8 @@ export default function PropertyFormPage() {
         navigate('/');
       }, 1000);
     } catch (error) {
-      setSubmitError(error.message || 'Could not submit property.');
+      const message = error?.response?.data?.message || error.message || 'Could not submit property.';
+      setSubmitError(message);
     } finally {
       setSubmitting(false);
     }
@@ -392,6 +404,7 @@ export default function PropertyFormPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
                   {[
                     ['city',     'City',               'e.g. Mumbai'],
+                    ['state',    'State',              'e.g. Maharashtra'],
                     ['locality', 'Locality / Area',     'e.g. Bandra West'],
                     ['landmark', 'Landmark (optional)', 'e.g. Near SV Road'],
                     ['pincode',  'PIN Code',             'e.g. 400050'],

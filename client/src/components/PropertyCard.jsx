@@ -3,7 +3,7 @@ import { MapPin, Heart, BedDouble, Maximize, ArrowUpRight, CheckCircle2 } from '
 import { fadeUp } from '../animations/variants';
 import Badge from './ui/Badge';
 
-const PropertyCard = ({ property, onClick }) => {
+const PropertyCard = ({ property, onClick, isSaved, onToggleSave }) => {
   const tags = Array.isArray(property.tags) ? property.tags : [];
 
   return (
@@ -29,8 +29,20 @@ const PropertyCard = ({ property, onClick }) => {
           ))}
         </div>
         
-        <button className="absolute top-4 right-4 p-2.5 bg-white/20 backdrop-blur-md rounded-full text-white hover:bg-white hover:text-emerald-500 transition-colors z-10" onClick={(e) => { e.stopPropagation(); }}>
-          <Heart className="w-5 h-5" />
+        <button
+          className={`absolute top-4 right-4 p-2.5 rounded-full backdrop-blur-md transition-colors z-10 ${
+            isSaved
+              ? 'bg-emerald-500 text-white'
+              : 'bg-white/20 text-white hover:bg-white hover:text-emerald-500'
+          }`}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (onToggleSave) {
+              onToggleSave(property);
+            }
+          }}
+        >
+          <Heart className="w-5 h-5" fill={isSaved ? 'currentColor' : 'none'} />
         </button>
 
         <div className="absolute bottom-4 left-4 right-4 flex justify-between items-end">

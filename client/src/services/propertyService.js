@@ -24,6 +24,11 @@ const normalizeProperty = (property) => {
 }
 
 export const propertyService = {
+  async createProperty(payload) {
+    const response = await apiClient.post('/properties', payload)
+    return response.data
+  },
+
   async getProperties(params = {}) {
     const response = await apiClient.get('/properties', { params })
     const data = response.data || {}
@@ -31,7 +36,8 @@ export const propertyService = {
       ? data.properties.map(normalizeProperty)
       : []
 
-    return { properties, meta: data.meta || {}, total: data.total || properties.length }
+    const total = data.total || data.meta?.total || properties.length
+    return { properties, meta: data.meta || {}, total }
   },
 
   async getPropertiesByCity(city, params = {}) {
@@ -44,7 +50,7 @@ export const propertyService = {
     return { 
       properties, 
       city: data.city || city,
-      total: data.total || properties.length,
+      total: data.total || data.count || properties.length,
       meta: data.meta || {} 
     }
   },
@@ -52,9 +58,12 @@ export const propertyService = {
   async getTrendingProperties(params = {}) {
     const response = await apiClient.get('/properties/trending', { params })
     const data = response.data || {}
-    const properties = Array.isArray(data.properties)
-      ? data.properties.map(normalizeProperty)
-      : []
+    const trending = Array.isArray(data.properties)
+      ? data.properties
+      : Array.isArray(data.trending)
+        ? data.trending
+        : []
+    const properties = trending.map(normalizeProperty)
     
     return { properties, total: data.total || properties.length }
   },
@@ -65,8 +74,10 @@ export const propertyService = {
     
     return {
       property: data.property ? normalizeProperty(data.property) : null,
-      stats: data.stats || {},
-      locality: data.locality || {},
+      similarProperties: Array.isArray(data.similarProperties)
+        ? data.similarProperties.map(normalizeProperty)
+        : [],
+      localityInsights: data.localityInsights || data.locality || null,
       reviews: data.reviews || [],
     }
   },

@@ -47,13 +47,16 @@ export const localityService = {
     }
   },
 
-  async getPriceTrends(locality) {
-    const response = await apiClient.get(`/locality/trends/${locality}`)
+  async getPriceTrends(locality, params = {}) {
+    const response = await apiClient.get(`/locality/trends/${locality}`, { params })
     const data = response.data || {}
     
     return {
       locality: data.locality || {},
-      priceTrend: data.priceTrend || [],
+      city: data.city || '',
+      currentAvgPrice: data.currentAvgPrice || 0,
+      growthMetrics: data.growthMetrics || {},
+      priceTrend: data.priceTrend || data.priceHistory || [],
     }
   },
 

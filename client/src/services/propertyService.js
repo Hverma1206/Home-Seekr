@@ -12,6 +12,8 @@ const normalizeProperty = (property) => {
     bhk: property.bhk || property.bedrooms || 'N/A',
     area: property.area || areaFallback,
     location: property.locationLabel || `${property.locality || ''}${property.city ? `, ${property.city}` : ''}`,
+    locality: property.locality || '',
+    city: property.city || '',
     dealer: property.dealer || property.role || 'Verified Agent',
     tags: Array.isArray(property.tags) ? property.tags : [],
     image: property.image || (property.images && property.images[0]) || '',
@@ -29,6 +31,63 @@ export const propertyService = {
       ? data.properties.map(normalizeProperty)
       : []
 
-    return { properties, meta: data.meta || {} }
+    return { properties, meta: data.meta || {}, total: data.total || properties.length }
+  },
+
+  async getPropertiesByCity(city, params = {}) {
+    const response = await apiClient.get(`/properties/city/${city}`, { params })
+    const data = response.data || {}
+    const properties = Array.isArray(data.properties)
+      ? data.properties.map(normalizeProperty)
+      : []
+    
+    return { 
+      properties, 
+      city: data.city || city,
+      total: data.total || properties.length,
+      meta: data.meta || {} 
+    }
+  },
+
+  async getTrendingProperties(params = {}) {
+    const response = await apiClient.get('/properties/trending', { params })
+    const data = response.data || {}
+    const properties = Array.isArray(data.properties)
+      ? data.properties.map(normalizeProperty)
+      : []
+    
+    return { properties, total: data.total || properties.length }
+  },
+
+  async getPropertyDetails(propertyId) {
+    const response = await apiClient.get(`/properties/details/${propertyId}`)
+    const data = response.data || {}
+    
+    return {
+      property: data.property ? normalizeProperty(data.property) : null,
+      stats: data.stats || {},
+      locality: data.locality || {},
+      reviews: data.reviews || [],
+    }
+  },
+
+  async saveProperty(propertyId) {
+    const response = await apiClient.post(`/properties/${propertyId}/save`)
+    return response.data
+  },
+
+  async getSavedProperties(params = {}) {
+    const response = await apiClient.get('/properties/saved', { params })
+    const data = response.data || {}
+    const properties = Array.isArray(data.properties)
+      ? data.properties.map(normalizeProperty)
+      : []
+    
+    return { properties, total: data.total || properties.length }
+  },
+
+  async contactPropertyOwner(propertyId, message) {
+    const response = await apiClient.post(`/properties/${propertyId}/contact`, { message })
+    return response.data
   },
 }

@@ -17,6 +17,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import { useAuth } from './hooks/useAuth';
 import useGeoLocation from './hooks/useGeoLocation';
 import { propertyService } from './services/propertyService';
+import { getLocationContext } from './utils/locationUtils';
 import { MOCK_PROPERTIES } from './data/properties';
 
 function MainLayout() {
@@ -28,7 +29,7 @@ function MainLayout() {
   const [selectedProperty, setSelectedProperty] = useState(null);
   const [redirectAfterLogin, setRedirectAfterLogin] = useState(null);
   const [properties, setProperties] = useState(MOCK_PROPERTIES);
-  const [propertiesMeta, setPropertiesMeta] = useState({ city: 'Gurugram' });
+  const [propertiesMeta, setPropertiesMeta] = useState({ city: 'Bangalore', locality: 'Indiranagar' });
   const [propertiesLoading, setPropertiesLoading] = useState(false);
   const [propertiesError, setPropertiesError] = useState('');
 
@@ -54,28 +55,44 @@ function MainLayout() {
       setPropertiesError('');
 
       try {
-        const params = coords
-          ? { lat: coords.latitude, lng: coords.longitude, radiusKm: 25, limit: 20 }
-          : { city: 'Gurugram', limit: 20 };
+        let city = 'Bangalore'; // Default city
+        let locationContext = { city: 'Bangalore', locality: 'Indiranagar' };
 
-        const { properties: nextProperties, meta } = await propertyService.getProperties(params);
+        // If we have coordinates, derive the city
+        if (coords?.latitude && coords?.longitude) {
+          locationContext = getLocationContext(coords.latitude, coords.longitude);
+          city = locationContext.city;
+        }
+
+        // Fetch properties for the derived city
+        const { properties: nextProperties, total } = await propertyService.getPropertiesByCity(city, { limit: 20 });
 
         if (!isActive) return;
 
         if (nextProperties.length) {
           setProperties(nextProperties);
-        }
-
-        if (meta) {
-          setPropertiesMeta((prev) => ({
-            ...prev,
-            ...(meta.location || {}),
-            total: meta.total ?? prev.total,
-          }));
+          setPropertiesMeta({
+            city,
+            locality: locationContext.locality,
+            total,
+            confidence: locationContext.confidence,
+          });
+        } else {
+          // Fallback to general properties if city search returns empty
+          const { properties: fallbackProps, total: fallbackTotal } = await propertyService.getProperties({ limit: 20 });
+          setProperties(fallbackProps);
+          setPropertiesMeta({
+            city,
+            locality: locationContext.locality,
+            total: fallbackTotal,
+            confidence: 'low',
+          });
         }
       } catch (error) {
         if (!isActive) return;
-        setPropertiesError('Unable to load live listings. Showing curated properties.');
+        console.error('Error fetching properties:', error);
+        setPropertiesError(geoError || 'Unable to load live listings. Showing curated properties.');
+        // Keep showing mock properties on error
       } finally {
         if (isActive) {
           setPropertiesLoading(false);
@@ -83,12 +100,14 @@ function MainLayout() {
       }
     };
 
+    // Fetch immediately on mount with default city
     fetchListings();
 
-    return () => {
-      isActive = false;
-    };
-  }, [coords]);
+    // Re-fetch when coordinates change
+    if (coords?.latitude && coords?.longitude) {
+      fetchListings();
+    }
+  }, [coords, geoError]);
 
   const handlePropertySelect = (property) => {
     setSelectedProperty(property);

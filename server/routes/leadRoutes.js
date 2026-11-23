@@ -10,8 +10,9 @@ import {
 	getLeadAnalytics,
 	qualifyLead,
 	getFollowupReminders,
+	getMyLeadForProperty,
 } from '../controllers/leadController.js'
-import { protect } from '../middleware/authMiddleware.js'
+import { protect, requireVerifiedPhone } from '../middleware/authMiddleware.js'
 
 const router = express.Router()
 
@@ -19,11 +20,12 @@ const router = express.Router()
 router.use(protect)
 
 // Lead management
-router.post('/', createLead)
+router.post('/', requireVerifiedPhone, createLead)
 router.get('/', getLeads)
 router.get('/buyer/my-leads', getBuyerLeads)
 router.get('/analytics', getLeadAnalytics)
 router.get('/reminders/followup', getFollowupReminders)
+router.get('/property/:propertyId', getMyLeadForProperty)
 
 // Single lead
 router.get('/:leadId', getLeadDetails)

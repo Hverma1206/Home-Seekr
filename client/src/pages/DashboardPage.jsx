@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Mail, Phone, Pencil, Bell, Sparkles, Search } from 'lucide-react'
+import { Mail, Phone, Pencil, Bell, Sparkles, Search, Building2 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import Button from '../components/ui/Button'
 import PropertyCard from '../components/PropertyCard'
 import ProjectCard from '../components/ProjectCard'
 import MyListingsPanel from '../components/MyListingsPanel'
+import MyEnquiriesPanel from '../components/MyEnquiriesPanel'
 import { propertyService, normalizeProperty } from '../services/propertyService'
 import { userService } from '../services/userService'
 import { alertService } from '../services/alertService'
@@ -39,6 +40,8 @@ const DashboardPage = () => {
 		.map((part) => part[0])
 		.join('')
 		.toUpperCase()
+
+	const isPoster = ['owner', 'broker', 'builder', 'admin'].includes(user?.role)
 
 	const normalizedProperties = useMemo(
 		() => feed.properties.map(normalizeProperty),
@@ -285,6 +288,9 @@ const DashboardPage = () => {
 								<p className="text-lg font-bold text-white mt-2 capitalize">
 									{user?.role || feed.role} account
 								</p>
+								{user?.companyName && (
+									<p className="text-sm text-slate-300 mt-1">{user.companyName}</p>
+								)}
 							</div>
 						</div>
 
@@ -335,6 +341,15 @@ const DashboardPage = () => {
 											<p className="text-xs uppercase tracking-widest text-slate-400 font-semibold">Email</p>
 											<p className="text-sm font-semibold text-slate-700">
 												{user?.email || 'Not provided'}
+												{user?.email && !user.isEmailVerified && (
+													<button
+														type="button"
+														onClick={() => navigate('/profile?verify=email')}
+														className="ml-2 text-xs font-bold text-emerald-600 hover:underline"
+													>
+														Verify
+													</button>
+												)}
 											</p>
 										</div>
 									</div>
@@ -345,7 +360,16 @@ const DashboardPage = () => {
 										<div>
 											<p className="text-xs uppercase tracking-widest text-slate-400 font-semibold">Phone</p>
 											<p className="text-sm font-semibold text-slate-700">
-												{user?.phoneNumber || 'Not provided'}
+												{user?.phoneNumber || user?.pendingPhoneNumber || 'Not provided'}
+												{!(user?.isPhoneVerified && user?.phoneNumber) && (
+													<button
+														type="button"
+														onClick={() => navigate('/profile?verify=phone')}
+														className="ml-2 text-xs font-bold text-emerald-600 hover:underline"
+													>
+														Verify
+													</button>
+												)}
 											</p>
 										</div>
 									</div>
@@ -367,7 +391,28 @@ const DashboardPage = () => {
 						</div>
 					)}
 
-					<MyListingsPanel />
+					{isPoster ? (
+						<>
+							<MyListingsPanel />
+							<MyEnquiriesPanel />
+						</>
+					) : (
+						<>
+							<MyEnquiriesPanel />
+							<div className="mt-12 flex flex-col md:flex-row md:items-center justify-between gap-4 rounded-3xl bg-emerald-50 border border-emerald-100 p-6">
+								<div className="flex items-center gap-4">
+									<Building2 className="w-8 h-8 text-emerald-600 shrink-0" />
+									<div>
+										<p className="font-bold text-slate-900">Have a property to sell or rent out?</p>
+										<p className="text-sm text-slate-600">List it for free and get enquiries from buyers and tenants.</p>
+									</div>
+								</div>
+								<Button variant="primary" onClick={() => navigate('/post-property')}>
+									Post property
+								</Button>
+							</div>
+						</>
+					)}
 
 					<div className="mt-12">
 						<div className="flex items-center gap-3 mb-6">

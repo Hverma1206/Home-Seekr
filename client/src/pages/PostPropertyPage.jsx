@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle, ArrowLeft, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../hooks/useAuth';
 
 const PROPERTY_TYPES_RESIDENTIAL = [
   'Flat / Apartment',
@@ -36,7 +37,7 @@ function OwnerBrokerModal({ onClose, onSubmit }) {
   const [role, setRole] = useState('owner');
 
   return (
-    <motion.div
+    <Motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -46,7 +47,7 @@ function OwnerBrokerModal({ onClose, onSubmit }) {
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
 
-      <motion.div
+      <Motion.div
         initial={{ scale: 0.92, opacity: 0, y: 20 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.92, opacity: 0, y: 20 }}
@@ -94,13 +95,16 @@ function OwnerBrokerModal({ onClose, onSubmit }) {
         >
           Submit
         </button>
-      </motion.div>
-    </motion.div>
+      </Motion.div>
+    </Motion.div>
   );
 }
 
+const POSTER_ROLES = ['owner', 'broker', 'builder'];
+
 const PostPropertyPage = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [lookingTo, setLookingTo] = useState('sell');
   const [propertyCategory, setPropertyCategory] = useState('residential');
   const [selectedType, setSelectedType] = useState('');
@@ -118,6 +122,11 @@ const PostPropertyPage = () => {
       return;
     }
     setTypeError(false);
+    // The poster type is asked once; accounts that already picked it at signup go straight to the form
+    if (POSTER_ROLES.includes(user?.role)) {
+      handleModalSubmit(user.role);
+      return;
+    }
     setShowModal(true);
   };
 
@@ -129,7 +138,7 @@ const PostPropertyPage = () => {
   };
 
   return (
-    <motion.div
+    <Motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -158,7 +167,7 @@ const PostPropertyPage = () => {
         <div className="w-full max-w-5xl grid md:grid-cols-2 overflow-hidden rounded-[2.5rem] shadow-2xl shadow-blue-900/40">
 
           {/* ── Left panel ── */}
-          <motion.div
+          <Motion.div
             initial={{ x: -40, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             transition={{ duration: 0.6, ease: 'easeOut' }}
@@ -185,10 +194,10 @@ const PostPropertyPage = () => {
             <p className="text-xs text-slate-400 mt-10">
               * Available with Owner Assist Plans
             </p>
-          </motion.div>
+          </Motion.div>
 
           {/* ── Right form panel ── */}
-          <motion.div
+          <Motion.div
             initial={{ x: 40, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             transition={{ duration: 0.6, ease: 'easeOut' }}
@@ -297,10 +306,10 @@ const PostPropertyPage = () => {
             >
               Start now
             </button>
-          </motion.div>
+          </Motion.div>
         </div>
       </div>
-    </motion.div>
+    </Motion.div>
   );
 };
 

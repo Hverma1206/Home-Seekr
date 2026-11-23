@@ -10,10 +10,16 @@ export const errorHandler = (err, _req, res, _next) => {
     })
   }
 
+  // A malformed id in the URL (e.g. /details/abc) is a missing record, not a server crash
+  if (err.name === 'CastError') {
+    return res.status(404).json({ message: 'Not found' })
+  }
+
   if (err.name === 'ValidationError') {
+    const errors = Object.values(err.errors).map((item) => item.message)
     return res.status(400).json({
-      message: 'Validation failed',
-      errors: Object.values(err.errors).map((item) => item.message),
+      message: errors.join(', ') || 'Validation failed',
+      errors,
     })
   }
 

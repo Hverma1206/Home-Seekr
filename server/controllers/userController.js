@@ -1,5 +1,5 @@
-import axios from 'axios'
 import jwt from 'jsonwebtoken'
+import { normalizeIndianMobileNumber, isDevOtpMode, dispatchOTP, isOTPValid } from '../utils/sms.js'
 import User from '../models/User.js'
 import Property from '../models/Property.js'
 import Project from '../models/Project.js'
@@ -8,9 +8,11 @@ const OTP_EXPIRY_MINUTES = 10
 const OTP_RESEND_DELAY_SECONDS = 30
 const MAX_OTP_ATTEMPTS = 5
 
-const buildUserResponse = (user) => ({
+export const buildUserResponse = (user) => ({
 	id: user._id,
 	phoneNumber: user.phoneNumber,
+	pendingPhoneNumber: user.pendingPhoneNumber || undefined,
+	isEmailVerified: Boolean(user.isEmailVerified),
 	firstName: user.firstName || '',
 	lastName: user.lastName || '',
 	email: user.email || undefined,
@@ -169,47 +171,7 @@ const generateToken = (id) => {
 	return jwt.sign({ id }, jwtSecret, { expiresIn: '7d' })
 }
 
-// Helper: Normalize Indian mobile number
-const normalizeIndianMobileNumber = (phoneNumber) => {
-	const cleaned = phoneNumber.replace(/\D/g, '')
-	let nationalNumber = cleaned
-
-	if (cleaned.startsWith('91') && cleaned.length >= 12) {
-		nationalNumber = cleaned.slice(-10)
-	}
-
-	const isValid = /^[6-9]\d{9}$/.test(nationalNumber)
-
-	return {
-		cleaned,
-		nationalNumber,
-		isValid,
-		internationalNumber: `91${nationalNumber}`,
-	}
-}
-
-// Helper: Call 2Factor API
-const call2FactorAPI = async (endpoint) => {
-	try {
-		const apiKey =
-			process.env.TWOFACTOR_API_KEY || process.env.TWO_FACTOR_API_KEY
-		if (!apiKey) {
-			throw new Error('2Factor API key not configured')
-		}
-
-		const response = await axios.get(
-			`https://2factor.in/API/V1/${apiKey}${endpoint}`,
-			{
-				timeout: 10000,
-			},
-		)
-		console.log(response.data)
-		return response.data
-	} catch (error) {
-		console.error('2Factor API Error:', error.message)
-		throw new Error(`2Factor API Error: ${error.message}`)
-	}
-}
+const SIGNUP_ROLES = ['buyer', 'owner', 'broker', 'builder']
 
 /**
  * @route   POST /api/auth/send-otp
@@ -218,7 +180,7 @@ const call2FactorAPI = async (endpoint) => {
  */
 export const sendOTP = async (req, res) => {
 	try {
-		const { phoneNumber, email, firstName, lastName } = req.body
+		const { phoneNumber } = req.body
 
 		// Validation
 		if (!phoneNumber) {
@@ -228,7 +190,7 @@ export const sendOTP = async (req, res) => {
 			})
 		}
 
-		const phoneDetails = normalizeIndianMobileNumber(phoneNumber)
+		const phoneDetails = normalizeIndianMobileNumber(String(phoneNumber))
 		if (!phoneDetails.isValid) {
 			return res.status(400).json({
 				success: false,
@@ -255,43 +217,31 @@ export const sendOTP = async (req, res) => {
 			}
 		}
 
-		// Call 2Factor API to send OTP
-		const apiResponse = await call2FactorAPI(
-			`/SMS/${phoneDetails.internationalNumber}/AUTOGEN/Homeseekrotp`,
-		)
+		if (existingUser?.isBanned) {
+			return res.status(403).json({
+				success: false,
+				message: 'This account has been suspended. Contact support.',
+			})
+		}
 
-		if (apiResponse.Status !== 'Success' || !apiResponse.Details) {
-			console.error('2Factor API Response:', apiResponse)
-			return res.status(500).json({
+		const sessionId = await dispatchOTP(phoneDetails)
+		if (!sessionId) {
+			return res.status(502).json({
 				success: false,
 				message: 'Failed to send OTP. Please try again.',
 			})
 		}
 
-		const sessionId = apiResponse.Details
-
-		// Update or create user with OTP session
-		const updateData = {
-			phoneNumber: phoneDetails.nationalNumber,
-			otpSessionId: sessionId,
-			otpSentAt: new Date(),
-			otpAttempts: 0,
-		}
-
-		const normalizedEmail = normalizeEmail(email)
-		if (normalizedEmail) {
-			updateData.email = normalizedEmail
-		}
-		if (firstName) {
-			updateData.firstName = firstName
-		}
-		if (lastName) {
-			updateData.lastName = lastName
-		}
-
-		const updatedUser = await User.findOneAndUpdate(
+		// Only the OTP session is written here: profile fields are set after the number is proven in verify-otp,
+		// otherwise anyone could rename someone else's account by requesting an OTP for their number
+		await User.findOneAndUpdate(
 			{ phoneNumber: phoneDetails.nationalNumber },
-			updateData,
+			{
+				phoneNumber: phoneDetails.nationalNumber,
+				otpSessionId: sessionId,
+				otpSentAt: new Date(),
+				otpAttempts: 0,
+			},
 			{
 				upsert: true,
 				returnDocument: 'after',
@@ -304,8 +254,10 @@ export const sendOTP = async (req, res) => {
 			message: 'OTP sent successfully',
 			data: {
 				phoneNumber: phoneDetails.nationalNumber,
-				email: updatedUser.email || undefined,
+				// A number that never finished verification is still a signup: ask for name and role
+				isNewUser: !existingUser?.isPhoneVerified,
 				expiresIn: OTP_EXPIRY_MINUTES,
+				devMode: isDevOtpMode(),
 			},
 		})
 	} catch (error) {
@@ -324,7 +276,7 @@ export const sendOTP = async (req, res) => {
  */
 export const verifyOTP = async (req, res) => {
 	try {
-		const { phoneNumber, otp, email, password, firstName, lastName } = req.body
+		const { phoneNumber, otp, email, password, firstName, lastName, role, companyName } = req.body
 
 		// Validation
 		if (!phoneNumber || !otp) {
@@ -334,7 +286,7 @@ export const verifyOTP = async (req, res) => {
 			})
 		}
 
-		const phoneDetails = normalizeIndianMobileNumber(phoneNumber)
+		const phoneDetails = normalizeIndianMobileNumber(String(phoneNumber))
 		if (!phoneDetails.isValid) {
 			return res.status(400).json({
 				success: false,
@@ -404,12 +356,14 @@ export const verifyOTP = async (req, res) => {
 			})
 		}
 
-		// Verify OTP with 2Factor API
-		const apiResponse = await call2FactorAPI(
-			`/SMS/VERIFY/${sessionId}/${cleanOTP}`,
-		)
+		if (user.isBanned) {
+			return res.status(403).json({
+				success: false,
+				message: 'This account has been suspended. Contact support.',
+			})
+		}
 
-		if (apiResponse.Status !== 'Success') {
+		if (!(await isOTPValid(sessionId, cleanOTP))) {
 			// Increment failed attempts
 			user.otpAttempts += 1
 			user.otpLastAttemptAt = new Date()
@@ -423,16 +377,30 @@ export const verifyOTP = async (req, res) => {
 		}
 
 		// OTP verified successfully - update user
+		const isNewUser = !user.isPhoneVerified
 		user.isPhoneVerified = true
 		user.otpSessionId = null
 		user.otpSentAt = null
 		user.otpAttempts = 0
 		user.isActive = true
-		user.firstName = firstName || user.firstName
-		user.lastName = lastName || user.lastName
+
+		// Signup details are taken once; a returning user logging in keeps their saved profile
+		if (isNewUser || !user.firstName) {
+			if (cleanString(firstName)) user.firstName = cleanString(firstName)
+			if (cleanString(lastName)) user.lastName = cleanString(lastName)
+		}
+		if (isNewUser && SIGNUP_ROLES.includes(role)) {
+			user.role = role
+		}
+		if (cleanString(companyName) && !user.companyName) {
+			user.companyName = cleanString(companyName).slice(0, 120)
+		}
 		const normalizedEmail = normalizeEmail(email)
-		if (normalizedEmail) {
-			user.email = normalizedEmail
+		if (normalizedEmail && !user.email) {
+			const emailTaken = await User.exists({ email: normalizedEmail, _id: { $ne: user._id } })
+			if (!emailTaken) {
+				user.email = normalizedEmail
+			}
 		}
 		if (password) {
 			user.password = password
@@ -450,6 +418,7 @@ export const verifyOTP = async (req, res) => {
 			data: {
 				token,
 				user: responseUser,
+				isNewUser,
 			},
 		})
 	} catch (error) {
@@ -458,6 +427,128 @@ export const verifyOTP = async (req, res) => {
 			success: false,
 			message: error.message || 'Failed to verify OTP',
 		})
+	}
+}
+
+// TEMPORARY: email + password auth, used until phone OTP (SMS provider) is integrated for real.
+// The phone number collected here is NOT verified (isPhoneVerified stays false).
+
+/**
+ * @route   POST /api/auth/register
+ * @desc    Sign up with email + password (phone number stored unverified)
+ * @access  Public
+ */
+export const registerWithEmail = async (req, res) => {
+	try {
+		const { email, password, phoneNumber, firstName, lastName, role, companyName } = req.body || {}
+
+		const normalizedEmail = normalizeEmail(email)
+		if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+			return res.status(400).json({ success: false, message: 'Please enter a valid email address' })
+		}
+		if (typeof password !== 'string' || password.length < 6) {
+			return res.status(400).json({ success: false, message: 'Password must be at least 6 characters' })
+		}
+		if (!cleanString(firstName)) {
+			return res.status(400).json({ success: false, message: 'Please enter your name' })
+		}
+		if (!phoneNumber) {
+			return res.status(400).json({ success: false, message: 'Phone number is required' })
+		}
+		const phoneDetails = normalizeIndianMobileNumber(String(phoneNumber))
+		if (!phoneDetails.isValid) {
+			return res.status(400).json({ success: false, message: 'Invalid Indian mobile number format' })
+		}
+
+		if (await User.exists({ email: normalizedEmail })) {
+			return res.status(409).json({ success: false, message: 'An account with this email already exists. Please log in.' })
+		}
+
+		if (await User.exists({ phoneNumber: phoneDetails.nationalNumber, isPhoneVerified: true })) {
+			return res.status(409).json({
+				success: false,
+				message: 'This mobile number is already registered. Log in with it using OTP instead.',
+			})
+		}
+
+		// The number is only claimed once it is verified by OTP (see verificationController)
+		const user = new User({ pendingPhoneNumber: phoneDetails.nationalNumber })
+		user.email = normalizedEmail
+		user.password = password
+		user.firstName = cleanString(firstName)
+		user.lastName = cleanString(lastName) || ''
+		user.role = SIGNUP_ROLES.includes(role) ? role : 'buyer'
+		if (cleanString(companyName)) {
+			user.companyName = cleanString(companyName).slice(0, 120)
+		}
+		user.isActive = true
+		await user.save()
+
+		return res.status(201).json({
+			success: true,
+			message: 'Account created successfully',
+			data: {
+				token: generateToken(user._id),
+				user: buildUserResponse(user),
+				isNewUser: true,
+			},
+		})
+	} catch (error) {
+		if (error.code === 11000) {
+			return res.status(409).json({ success: false, message: 'Email or phone number already registered' })
+		}
+		if (error.name === 'ValidationError') {
+			return res.status(400).json({
+				success: false,
+				message: Object.values(error.errors).map((item) => item.message).join(', '),
+			})
+		}
+		console.error('Register Error:', error)
+		return res.status(500).json({ success: false, message: error.message || 'Failed to create account' })
+	}
+}
+
+/**
+ * @route   POST /api/auth/login
+ * @desc    Log in with email + password
+ * @access  Public
+ */
+export const loginWithEmail = async (req, res) => {
+	try {
+		const { email, password } = req.body || {}
+		const normalizedEmail = normalizeEmail(email)
+
+		if (!normalizedEmail || typeof password !== 'string' || !password) {
+			return res.status(400).json({ success: false, message: 'Email and password are required' })
+		}
+
+		const user = await User.findOne({ email: normalizedEmail }).select('+password')
+		// Same message for unknown email and wrong password, so emails can't be probed
+		if (!user || !user.password || !(await user.matchPassword(password))) {
+			return res.status(401).json({ success: false, message: 'Invalid email or password' })
+		}
+
+		if (user.isBanned) {
+			return res.status(403).json({ success: false, message: 'This account has been suspended. Contact support.' })
+		}
+
+		if (!user.isActive) {
+			user.isActive = true
+			await user.save()
+		}
+
+		return res.status(200).json({
+			success: true,
+			message: 'Logged in successfully',
+			data: {
+				token: generateToken(user._id),
+				user: buildUserResponse(user),
+				isNewUser: false,
+			},
+		})
+	} catch (error) {
+		console.error('Login Error:', error)
+		return res.status(500).json({ success: false, message: error.message || 'Failed to log in' })
 	}
 }
 
@@ -496,7 +587,7 @@ export const getCurrentUser = async (req, res) => {
  */
 export const updateProfile = async (req, res) => {
 	try {
-		const { name, firstName, lastName, email, phoneNumber, profileImage, bio } =
+		const { name, firstName, lastName, email, phoneNumber, profileImage, bio, companyName } =
 			req.body
 
 		const user = await User.findById(req.user._id)
@@ -532,30 +623,29 @@ export const updateProfile = async (req, res) => {
 					message: 'Email already in use',
 				})
 			}
+			// A new address has to be verified again
+			if (normalizedEmail !== user.email) {
+				user.isEmailVerified = false
+				user.emailOtpHash = null
+				user.emailOtpSentAt = null
+				user.emailOtpAttempts = 0
+			}
 			user.email = normalizedEmail
 		}
 
+		// The phone number is the login and is handed to buyers on enquiries, so it only changes through OTP verification
 		if (typeof phoneNumber === 'string' && phoneNumber.trim()) {
 			const phoneDetails = normalizeIndianMobileNumber(phoneNumber)
-			if (!phoneDetails.isValid) {
+			if (phoneDetails.nationalNumber !== user.phoneNumber) {
 				return res.status(400).json({
 					success: false,
-					message: 'Invalid Indian mobile number format',
+					message: 'Phone number cannot be changed here. Log in with the new number instead.',
 				})
 			}
-			if (phoneDetails.nationalNumber !== user.phoneNumber) {
-				const existingPhone = await User.findOne({
-					phoneNumber: phoneDetails.nationalNumber,
-					_id: { $ne: user._id },
-				})
-				if (existingPhone) {
-					return res.status(409).json({
-						success: false,
-						message: 'Phone number already in use',
-					})
-				}
-				user.phoneNumber = phoneDetails.nationalNumber
-			}
+		}
+
+		if (typeof companyName === 'string') {
+			user.companyName = companyName.trim().slice(0, 120)
 		}
 
 		if (typeof profileImage === 'string') {
@@ -576,9 +666,12 @@ export const updateProfile = async (req, res) => {
 			},
 		})
 	} catch (error) {
-		return res.status(500).json({
+		const isValidation = error.name === 'ValidationError'
+		return res.status(isValidation ? 400 : 500).json({
 			success: false,
-			message: error.message || 'Failed to update profile',
+			message: isValidation
+				? Object.values(error.errors).map((item) => item.message).join(', ')
+				: error.message || 'Failed to update profile',
 		})
 	}
 }
@@ -590,7 +683,7 @@ export const updateProfile = async (req, res) => {
  */
 export const resendOTP = async (req, res) => {
 	try {
-		const { phoneNumber, email } = req.body
+		const { phoneNumber } = req.body
 
 		// Validation
 		if (!phoneNumber) {
@@ -600,7 +693,7 @@ export const resendOTP = async (req, res) => {
 			})
 		}
 
-		const phoneDetails = normalizeIndianMobileNumber(phoneNumber)
+		const phoneDetails = normalizeIndianMobileNumber(String(phoneNumber))
 		if (!phoneDetails.isValid) {
 			return res.status(400).json({
 				success: false,
@@ -620,11 +713,11 @@ export const resendOTP = async (req, res) => {
 			})
 		}
 
-		// Check if user is already verified
-		if (user.isPhoneVerified) {
-			return res.status(400).json({
+		// Login and signup share this flow, so verified (returning) users must be able to resend too
+		if (user.isBanned) {
+			return res.status(403).json({
 				success: false,
-				message: 'Phone number is already verified',
+				message: 'This account has been suspended. Contact support.',
 			})
 		}
 
@@ -642,20 +735,13 @@ export const resendOTP = async (req, res) => {
 			}
 		}
 
-		// Call 2Factor API to send OTP
-		const apiResponse = await call2FactorAPI(
-			`/SMS/${phoneDetails.internationalNumber}/AUTOGEN/Homeseekrotp`,
-		)
-
-		if (apiResponse.Status !== 'Success' || !apiResponse.Details) {
-			console.error('2Factor API Response:', apiResponse)
-			return res.status(500).json({
+		const sessionId = await dispatchOTP(phoneDetails)
+		if (!sessionId) {
+			return res.status(502).json({
 				success: false,
 				message: 'Failed to send OTP. Please try again.',
 			})
 		}
-
-		const sessionId = apiResponse.Details
 
 		// Update user with new OTP session
 		user.otpSessionId = sessionId

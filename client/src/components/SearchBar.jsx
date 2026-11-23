@@ -71,13 +71,13 @@ const SearchBar = ({ onSearch }) => {
       className="w-full max-w-4xl mx-auto mt-8 relative z-20"
     >
       {/* Floating Tabs */}
-      <div className="flex justify-center mb-[-1rem] relative z-10">
-        <div className="bg-slate-900 p-1 rounded-full shadow-lg flex gap-1">
+      <div className="flex justify-center mb-[-1rem] relative z-10 px-2">
+        <div className="bg-slate-900 p-1 rounded-full shadow-lg flex gap-0.5 sm:gap-1 max-w-full overflow-x-auto">
           {['buy', 'rent', 'pg', 'commercial', 'projects'].map((tab) => (
             <button 
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`px-6 py-2 rounded-full text-sm font-bold uppercase tracking-wider transition-all duration-300 ${activeTab === tab ? 'bg-emerald-500 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+              className={`shrink-0 px-3 sm:px-6 py-2 rounded-full text-[11px] sm:text-sm font-bold uppercase tracking-wider transition-colors duration-200 ${activeTab === tab ? 'bg-emerald-500 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
             >
               {tab}
             </button>

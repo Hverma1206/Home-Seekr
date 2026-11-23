@@ -1,9 +1,276 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { motion } from 'framer-motion';
-import { Filter, ChevronLeft, ChevronRight } from 'lucide-react';
-import { staggerContainer } from '../animations/variants';
-import Button from '../components/ui/Button';
+import { useEffect, useEffectEvent, useMemo, useState } from 'react';
+import { AnimatePresence, motion as Motion } from 'framer-motion';
+import { SlidersHorizontal, X, ChevronLeft, ChevronRight, LayoutGrid, Map as MapIcon, SearchX, Info } from 'lucide-react';
 import PropertyCard from '../components/PropertyCard';
+
+const INTENTS = [
+  { key: '', label: 'All' },
+  { key: 'buy', label: 'Buy' },
+  { key: 'rent', label: 'Rent' },
+  { key: 'pg', label: 'PG' },
+  { key: 'commercial', label: 'Commercial' },
+];
+
+const BUDGET_PRESETS = {
+  buy: [
+    { label: 'Under ₹50 L', max: 5000000 },
+    { label: '₹50 L – 1 Cr', min: 5000000, max: 10000000 },
+    { label: '₹1 – 2 Cr', min: 10000000, max: 20000000 },
+    { label: '₹2 – 5 Cr', min: 20000000, max: 50000000 },
+    { label: '₹5 Cr+', min: 50000000 },
+  ],
+  rent: [
+    { label: 'Under ₹15K', max: 15000 },
+    { label: '₹15K – 30K', min: 15000, max: 30000 },
+    { label: '₹30K – 50K', min: 30000, max: 50000 },
+    { label: '₹50K – 1 L', min: 50000, max: 100000 },
+    { label: '₹1 L+', min: 100000 },
+  ],
+};
+
+const BHK_OPTIONS = [
+  { label: '1 RK / 1 BHK', value: 1 },
+  { label: '2 BHK', value: 2 },
+  { label: '3 BHK', value: 3 },
+  { label: '4+ BHK', value: 4 },
+];
+
+const TYPE_OPTIONS = [
+  { label: 'Apartment', value: 'Apartment' },
+  { label: 'Builder Floor', value: 'Builder Floor' },
+  { label: 'Villa / House', value: 'Villa' },
+  { label: 'Plot / Land', value: 'Plot / Land' },
+];
+
+const FURNISHING_OPTIONS = [
+  { label: 'Unfurnished', value: 'unfurnished' },
+  { label: 'Semi-furnished', value: 'semi-furnished' },
+  { label: 'Fully furnished', value: 'fully-furnished' },
+];
+
+const POSTED_BY_OPTIONS = [
+  { label: 'Owner', value: 'owner' },
+  { label: 'Agent', value: 'broker' },
+  { label: 'Builder', value: 'builder' },
+];
+
+const SORT_OPTIONS = [
+  { value: 'newest', label: 'Newest' },
+  { value: 'price_asc', label: 'Price: Low–High' },
+  { value: 'price_desc', label: 'Price: High–Low' },
+];
+
+const toNum = (value) => {
+  if (value === undefined || value === null || value === '') return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const formatRupees = (value) => {
+  const n = toNum(value);
+  if (n === undefined) return '';
+  if (n >= 10000000) return `₹${+(n / 10000000).toFixed(2)} Cr`;
+  if (n >= 100000) return `₹${+(n / 100000).toFixed(2)} L`;
+  if (n >= 1000) return `₹${+(n / 1000).toFixed(1)}K`;
+  return `₹${n}`;
+};
+
+const formatRange = (min, max, format) => {
+  const a = format(min);
+  const b = format(max);
+  if (a && b) return `${a} – ${b}`;
+  if (a) return `${a}+`;
+  if (b) return `Under ${b}`;
+  return '';
+};
+
+const formatSqFt = (value) => (toNum(value) === undefined ? '' : `${toNum(value).toLocaleString('en-IN')} sq.ft`);
+
+const labelOf = (options, value) => options.find((option) => String(option.value) === String(value))?.label || value;
+
+const Chip = ({ active, onClick, children }) => (
+  <button
+    type="button"
+    aria-pressed={active}
+    onClick={onClick}
+    className={`px-3.5 py-2 rounded-full text-sm font-semibold border transition-colors duration-150 ${
+      active
+        ? 'bg-slate-900 border-slate-900 text-white'
+        : 'bg-white border-slate-200 text-slate-700 hover:border-slate-400'
+    }`}
+  >
+    {children}
+  </button>
+);
+
+const FilterSection = ({ title, children }) => (
+  <section className="py-5 border-b border-slate-100 last:border-b-0">
+    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">{title}</h3>
+    {children}
+  </section>
+);
+
+// Min/max inputs: typing stays instant locally and the search runs once the user pauses
+const RangeInputs = ({ min, max, onCommit, placeholders, format }) => {
+  const [draft, setDraft] = useState({ min: min ?? '', max: max ?? '' });
+  const [synced, setSynced] = useState({ min, max });
+
+  // Filters changed from outside (a preset, "Clear all"): show the new values
+  if (synced.min !== min || synced.max !== max) {
+    setSynced({ min, max });
+    setDraft({ min: min ?? '', max: max ?? '' });
+  }
+
+  const commit = useEffectEvent((nextMin, nextMax) => onCommit(nextMin, nextMax));
+
+  useEffect(() => {
+    const nextMin = toNum(draft.min);
+    const nextMax = toNum(draft.max);
+    if (nextMin === toNum(min) && nextMax === toNum(max)) return undefined;
+    const timer = setTimeout(() => commit(nextMin, nextMax), 500);
+    return () => clearTimeout(timer);
+  }, [draft, min, max]);
+
+  const field = (key, placeholder) => (
+    <input
+      type="text"
+      inputMode="numeric"
+      value={draft[key]}
+      onChange={(e) => {
+        const digits = e.target.value.replace(/\D/g, '').slice(0, 12);
+        setDraft((prev) => ({ ...prev, [key]: digits }));
+      }}
+      placeholder={placeholder}
+      aria-label={placeholder}
+      className="w-full min-w-0 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-800 placeholder-slate-400 outline-none focus:border-slate-900 focus:bg-white transition-colors"
+    />
+  );
+
+  const preview = formatRange(draft.min, draft.max, format);
+
+  return (
+    <div>
+      <div className="flex items-center gap-2">
+        {field('min', placeholders[0])}
+        <span className="text-slate-300">–</span>
+        {field('max', placeholders[1])}
+      </div>
+      {preview && <p className="text-xs text-slate-500 font-medium mt-2">{preview}</p>}
+    </div>
+  );
+};
+
+const FilterPanel = ({ filters, intent, update }) => {
+  const budgetKind = intent === 'rent' || intent === 'pg' ? 'rent' : 'buy';
+  const presets = intent ? BUDGET_PRESETS[budgetKind] : null;
+  const minPrice = toNum(filters.minPrice);
+  const maxPrice = toNum(filters.maxPrice);
+
+  return (
+    <div>
+      <FilterSection title={budgetKind === 'rent' ? 'Monthly rent' : 'Budget'}>
+        {presets && (
+          <div className="flex flex-wrap gap-2 mb-3">
+            {presets.map((preset) => {
+              const active = minPrice === preset.min && maxPrice === preset.max;
+              return (
+                <Chip
+                  key={preset.label}
+                  active={active}
+                  onClick={() => update(active
+                    ? { minPrice: undefined, maxPrice: undefined }
+                    : { minPrice: preset.min, maxPrice: preset.max })}
+                >
+                  {preset.label}
+                </Chip>
+              );
+            })}
+          </div>
+        )}
+        <RangeInputs
+          min={minPrice}
+          max={maxPrice}
+          placeholders={['Min ₹', 'Max ₹']}
+          format={formatRupees}
+          onCommit={(min, max) => update({ minPrice: min, maxPrice: max })}
+        />
+      </FilterSection>
+
+      <FilterSection title="Bedrooms">
+        <div className="flex flex-wrap gap-2">
+          {BHK_OPTIONS.map((option) => {
+            const active = toNum(filters.bhk) === option.value;
+            return (
+              <Chip key={option.value} active={active} onClick={() => update({ bhk: active ? undefined : option.value })}>
+                {option.label}
+              </Chip>
+            );
+          })}
+        </div>
+      </FilterSection>
+
+      <FilterSection title="Property type">
+        <div className="flex flex-wrap gap-2">
+          {TYPE_OPTIONS.map((option) => {
+            const active = filters.selectedType === option.value;
+            return (
+              <Chip key={option.value} active={active} onClick={() => update({ selectedType: active ? undefined : option.value })}>
+                {option.label}
+              </Chip>
+            );
+          })}
+        </div>
+      </FilterSection>
+
+      <FilterSection title="Furnishing">
+        <div className="flex flex-wrap gap-2">
+          {FURNISHING_OPTIONS.map((option) => {
+            const active = filters.furnishing === option.value;
+            return (
+              <Chip key={option.value} active={active} onClick={() => update({ furnishing: active ? undefined : option.value })}>
+                {option.label}
+              </Chip>
+            );
+          })}
+        </div>
+      </FilterSection>
+
+      <FilterSection title="Posted by">
+        <div className="flex flex-wrap gap-2">
+          {POSTED_BY_OPTIONS.map((option) => {
+            const active = filters.postedBy === option.value;
+            return (
+              <Chip key={option.value} active={active} onClick={() => update({ postedBy: active ? undefined : option.value })}>
+                {option.label}
+              </Chip>
+            );
+          })}
+        </div>
+      </FilterSection>
+
+      <FilterSection title="Area">
+        <RangeInputs
+          min={toNum(filters.minArea)}
+          max={toNum(filters.maxArea)}
+          placeholders={['Min sq.ft', 'Max sq.ft']}
+          format={formatSqFt}
+          onCommit={(min, max) => update({ minArea: min, maxArea: max })}
+        />
+      </FilterSection>
+    </div>
+  );
+};
+
+const SkeletonCard = () => (
+  <div className="rounded-3xl p-2.5 border border-slate-100 animate-pulse" aria-hidden="true">
+    <div className="h-56 rounded-[1.25rem] bg-slate-100 mb-4" />
+    <div className="px-2.5 pb-2 space-y-3">
+      <div className="h-5 w-3/4 rounded-full bg-slate-100" />
+      <div className="h-4 w-1/2 rounded-full bg-slate-100" />
+      <div className="h-4 w-2/3 rounded-full bg-slate-100 mt-5" />
+    </div>
+  </div>
+);
 
 const ListingsPage = ({
   onPropertySelect,
@@ -11,7 +278,7 @@ const ListingsPage = ({
   locationMeta,
   isLoading,
   locationError,
-  onSearch,
+  onFiltersChange,
   activeFilters = {},
   savedPropertyIds,
   onToggleSave,
@@ -23,60 +290,96 @@ const ListingsPage = ({
   totalPages = 1,
   onPageChange,
 }) => {
-  const headlineCity = locationMeta?.city || 'Your Area';
-  const headlineLocality = locationMeta?.locality;
-  const listingsCount = locationMeta?.total ?? properties.length;
-  const notFound = Boolean(locationMeta?.notFound) && !isLoading;
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const filters = activeFilters;
   const isMapView = viewMode === 'map';
-  const [minPrice, setMinPrice] = useState(activeFilters.minPrice || '');
-  const [maxPrice, setMaxPrice] = useState(activeFilters.maxPrice || '');
-  const [minArea, setMinArea] = useState(activeFilters.minArea || '');
-  const [maxArea, setMaxArea] = useState(activeFilters.maxArea || '');
-  const [selectedBhk, setSelectedBhk] = useState(activeFilters.bhk || '');
-  const [selectedType, setSelectedType] = useState(activeFilters.selectedType || '');
-  const [selectedAmenities, setSelectedAmenities] = useState(activeFilters.amenities || []);
-  const [furnishing, setFurnishing] = useState(activeFilters.furnishing || '');
-  const [postedBy, setPostedBy] = useState(activeFilters.postedBy || '');
-  const [verifiedOnly, setVerifiedOnly] = useState(Boolean(activeFilters.verifiedOnly));
-  const isHydratingRef = useRef(false);
-  const lastAutoFiltersRef = useRef('');
+  const total = locationMeta?.total ?? properties.length;
+  const intent = filters.propertyCategory === 'commercial' ? 'commercial' : filters.lookingTo || '';
+  const isRefreshing = isLoading && properties.length > 0;
+  const isFirstLoad = isLoading && properties.length === 0;
 
-  const amenityOptions = ['Parking', 'Lift', 'Gym', 'Pool', 'Security', 'Power Backup'];
-  const intentOptions = [
-    { key: 'buy', label: 'Buy' },
-    { key: 'rent', label: 'Rent' },
-    { key: 'pg', label: 'PG' },
-    { key: 'commercial', label: 'Commercial' },
-  ];
-  const propertyTypeOptions = [
-    { label: 'Apartment', value: 'Apartment' },
-    { label: 'Villa', value: 'Villa' },
-    { label: 'Builder Floor', value: 'Builder Floor' },
-    { label: 'Plots / Land', value: 'Plot / Land' },
-  ];
-  const bhkOptions = [
-    { label: '1 RK', value: 1 },
-    { label: '1 BHK', value: 1 },
-    { label: '2 BHK', value: 2 },
-    { label: '3 BHK', value: 3 },
-    { label: '4+ BHK', value: 4 },
-  ];
+  // Merge a patch into the filters; undefined/empty values remove the filter
+  const update = (patch) => {
+    const next = { ...filters, ...patch };
+    Object.entries(patch).forEach(([key, value]) => {
+      if (value === undefined || value === '' || (Array.isArray(value) && !value.length)) delete next[key];
+    });
+    onFiltersChange?.(next);
+  };
 
-  const locationLabel = headlineLocality
-    ? `${headlineLocality}${headlineCity ? `, ${headlineCity}` : ''}`
-    : headlineCity;
+  const setIntent = (key) => {
+    if (key === intent) return;
+    const wasRent = intent === 'rent' || intent === 'pg';
+    const isRent = key === 'rent' || key === 'pg';
+    // Sale budgets and monthly rents are different scales, so a budget doesn't survive the switch
+    const resetBudget = wasRent !== isRent || !key || key === 'commercial'
+      ? { minPrice: undefined, maxPrice: undefined }
+      : {};
+    if (!key) {
+      update({ lookingTo: undefined, propertyCategory: undefined, ...resetBudget });
+    } else if (key === 'commercial') {
+      update({ lookingTo: undefined, propertyCategory: 'commercial', ...resetBudget });
+    } else {
+      update({ lookingTo: key, propertyCategory: 'residential', ...resetBudget });
+    }
+  };
 
-  const activeIntent = activeFilters.propertyCategory === 'commercial'
-    ? 'commercial'
-    : activeFilters.lookingTo || null;
+  const activeChips = useMemo(() => {
+    const chips = [];
+    const add = (key, label, patch) => chips.push({ key, label, patch });
+    const intentKind = intent === 'rent' || intent === 'pg' ? 'rent' : 'buy';
 
-  const intentLabel = activeFilters.lookingTo
-    ? activeFilters.lookingTo.toUpperCase()
-    : activeFilters.propertyCategory === 'commercial'
-      ? 'COMMERCIAL'
-      : activeFilters.propertyCategory === 'project'
-        ? 'PROJECTS'
-        : '';
+    if (filters.locality) add('locality', filters.locality, { locality: undefined });
+    if (filters.city && !filters.locality) add('city', filters.city, { city: undefined });
+    if (filters.minPrice || filters.maxPrice) {
+      const preset = BUDGET_PRESETS[intentKind].find(
+        (p) => p.min === toNum(filters.minPrice) && p.max === toNum(filters.maxPrice),
+      );
+      add('price', preset?.label || formatRange(filters.minPrice, filters.maxPrice, formatRupees), { minPrice: undefined, maxPrice: undefined });
+    }
+    if (filters.bhk) add('bhk', labelOf(BHK_OPTIONS, filters.bhk), { bhk: undefined });
+    if (filters.selectedType) add('type', labelOf(TYPE_OPTIONS, filters.selectedType), { selectedType: undefined });
+    if (filters.furnishing) add('furnishing', labelOf(FURNISHING_OPTIONS, filters.furnishing), { furnishing: undefined });
+    if (filters.postedBy) add('postedBy', `By ${labelOf(POSTED_BY_OPTIONS, filters.postedBy).toLowerCase()}`, { postedBy: undefined });
+    if (filters.minArea || filters.maxArea) add('area', formatRange(filters.minArea, filters.maxArea, formatSqFt), { minArea: undefined, maxArea: undefined });
+    if (Array.isArray(filters.amenities) && filters.amenities.length) add('amenities', filters.amenities.join(', '), { amenities: undefined });
+    if (filters.verifiedOnly) add('verified', 'Verified only', { verifiedOnly: undefined });
+    return chips;
+  }, [filters, intent]);
+
+  const clearAll = () => {
+    const keep = {};
+    if (filters.lookingTo) keep.lookingTo = filters.lookingTo;
+    if (filters.propertyCategory) keep.propertyCategory = filters.propertyCategory;
+    onFiltersChange?.(keep);
+  };
+
+  // Drawer: lock page scroll and close on Escape
+  useEffect(() => {
+    if (!drawerOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e) => {
+      if (e.key === 'Escape') setDrawerOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [drawerOpen]);
+
+  const fallbackFrom = locationMeta?.fallbackFrom;
+  const placeLabel = filters.locality
+    ? `${filters.locality}${locationMeta?.city ? `, ${locationMeta.city}` : ''}`
+    : locationMeta?.city;
+  const intentLabel = {
+    buy: 'for sale',
+    rent: 'for rent',
+    pg: 'PG / co-living',
+    commercial: 'commercial',
+  }[intent];
+  const headline = fallbackFrom || !placeLabel ? 'All properties' : `Properties in ${placeLabel}`;
 
   const mapPoints = useMemo(() => {
     const points = properties
@@ -85,526 +388,271 @@ const ListingsPage = ({
         if (!coords || coords.length < 2) return null;
         const [lng, lat] = coords;
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-        return {
-          id: property.id,
-          title: property.title,
-          price: property.price,
-          lat,
-          lng,
-          property,
-        };
+        return { id: property.id, price: property.price, lat, lng, property };
       })
       .filter(Boolean);
-
     if (!points.length) return [];
-
-    const lats = points.map((point) => point.lat);
-    const lngs = points.map((point) => point.lng);
-    const minLat = Math.min(...lats);
-    const maxLat = Math.max(...lats);
-    const minLng = Math.min(...lngs);
-    const maxLng = Math.max(...lngs);
-
-    return points.map((point) => {
-      const x = maxLng === minLng ? 50 : ((point.lng - minLng) / (maxLng - minLng)) * 100;
-      const y = maxLat === minLat ? 50 : (1 - (point.lat - minLat) / (maxLat - minLat)) * 100;
-      return { ...point, x, y };
-    });
+    const lats = points.map((p) => p.lat);
+    const lngs = points.map((p) => p.lng);
+    const [minLat, maxLat, minLng, maxLng] = [Math.min(...lats), Math.max(...lats), Math.min(...lngs), Math.max(...lngs)];
+    return points.map((p) => ({
+      ...p,
+      x: maxLng === minLng ? 50 : 6 + ((p.lng - minLng) / (maxLng - minLng)) * 88,
+      y: maxLat === minLat ? 50 : 8 + (1 - (p.lat - minLat) / (maxLat - minLat)) * 84,
+    }));
   }, [properties]);
 
-  const pageNumbers = () => {
-    const total = Math.max(totalPages || 1, 1);
-    const start = Math.max(1, currentPage - 2);
-    const end = Math.min(total, start + 4);
+  const pageNumbers = useMemo(() => {
+    const last = Math.max(totalPages || 1, 1);
+    const start = Math.max(1, Math.min(currentPage - 2, last - 4));
+    const end = Math.min(last, start + 4);
     const pages = [];
-
-    for (let page = start; page <= end; page += 1) {
-      pages.push(page);
-    }
-
-    if (start > 1) {
-      pages.unshift(1);
-      if (start > 2) {
-        pages.splice(1, 0, 'ellipsis');
-      }
-    }
-
-    if (end < total) {
-      if (end < total - 1) {
-        pages.push('ellipsis');
-      }
-      pages.push(total);
-    }
-
+    for (let page = start; page <= end; page += 1) pages.push(page);
+    if (start > 1) pages.unshift(1, ...(start > 2 ? ['gap-start'] : []));
+    if (end < last) pages.push(...(end < last - 1 ? ['gap-end'] : []), last);
     return pages;
-  };
-
-  const handleIntentChange = (intentKey) => {
-    if (!onSearch) return;
-    const nextFilters = { ...activeFilters };
-
-    if (intentKey === 'commercial') {
-      nextFilters.propertyCategory = 'commercial';
-      delete nextFilters.lookingTo;
-    } else {
-      nextFilters.propertyCategory = 'residential';
-      nextFilters.lookingTo = intentKey;
-    }
-
-    onSearch(nextFilters);
-  };
-
-  const stableStringify = (value) => {
-    if (Array.isArray(value)) {
-      return `[${value.slice().sort().map((item) => stableStringify(item)).join(',')}]`;
-    }
-    if (value && typeof value === 'object') {
-      return `{${Object.keys(value).sort().map((key) => `"${key}":${stableStringify(value[key])}`).join(',')}}`;
-    }
-    return JSON.stringify(value ?? null);
-  };
-
-  useEffect(() => {
-    isHydratingRef.current = true;
-    setMinPrice(activeFilters.minPrice || '');
-    setMaxPrice(activeFilters.maxPrice || '');
-    setMinArea(activeFilters.minArea || '');
-    setMaxArea(activeFilters.maxArea || '');
-    setSelectedBhk(activeFilters.bhk || '');
-    setSelectedType(activeFilters.selectedType || '');
-    setSelectedAmenities(activeFilters.amenities || []);
-    setFurnishing(activeFilters.furnishing || '');
-    setPostedBy(activeFilters.postedBy || '');
-    setVerifiedOnly(Boolean(activeFilters.verifiedOnly));
-    lastAutoFiltersRef.current = stableStringify(activeFilters);
-  }, [activeFilters]);
-
-  useEffect(() => {
-    if (!onSearch) return;
-    if (isHydratingRef.current) {
-      isHydratingRef.current = false;
-      return;
-    }
-
-    const nextFilters = {
-      ...activeFilters,
-      minPrice: minPrice !== '' ? Number(minPrice) : undefined,
-      maxPrice: maxPrice !== '' ? Number(maxPrice) : undefined,
-      minArea: minArea !== '' ? Number(minArea) : undefined,
-      maxArea: maxArea !== '' ? Number(maxArea) : undefined,
-      bhk: selectedBhk !== '' ? Number(selectedBhk) : undefined,
-      selectedType: selectedType || undefined,
-      amenities: selectedAmenities,
-      furnishing: furnishing || undefined,
-      postedBy: postedBy || undefined,
-      verifiedOnly: verifiedOnly ? 'true' : undefined,
-    };
-
-    const signature = stableStringify(nextFilters);
-    if (signature === lastAutoFiltersRef.current) {
-      return undefined;
-    }
-
-    lastAutoFiltersRef.current = signature;
-    const timer = setTimeout(() => {
-      onSearch(nextFilters);
-    }, 250);
-
-    return () => clearTimeout(timer);
-  }, [
-    minPrice,
-    maxPrice,
-    minArea,
-    maxArea,
-    selectedBhk,
-    selectedType,
-    selectedAmenities,
-    furnishing,
-    postedBy,
-    verifiedOnly,
-    activeFilters,
-    onSearch,
-  ]);
-
-  const toggleAmenity = (amenity) => {
-    setSelectedAmenities((prev) => (
-      prev.includes(amenity)
-        ? prev.filter((item) => item !== amenity)
-        : [...prev, amenity]
-    ));
-  };
+  }, [currentPage, totalPages]);
 
   return (
-    <motion.div 
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="pt-32 pb-24 max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8"
+    <Motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.15 }}
+      className="pt-28 pb-24 max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 overflow-x-clip"
     >
-      <div className="flex flex-col lg:flex-row gap-10">
-        
-        {/* Editorial Sidebar Filters */}
-        <div className="w-full lg:w-80 shrink-0">
-          <div className="sticky top-32">
-            <h1 className="text-4xl font-black text-slate-900 tracking-tighter mb-2">{headlineCity}</h1>
-            <p className="text-slate-500 font-medium mb-6">
-              {headlineLocality ? `${headlineLocality} • ` : ''}{listingsCount} Premium Properties
-            </p>
-            {locationError && (
-              <p className="text-xs text-slate-400 font-semibold mb-6">{locationError}</p>
-            )}
+      {/* Header */}
+      <header className="mb-6">
+        <h1 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tighter">{headline}</h1>
+        <p className="text-slate-500 font-medium mt-1" aria-live="polite">
+          {isFirstLoad
+            ? 'Finding properties…'
+            : `${total.toLocaleString('en-IN')} ${total === 1 ? 'property' : 'properties'}${intentLabel ? ` ${intentLabel}` : ''}`}
+        </p>
+        {fallbackFrom && !isFirstLoad && (
+          <p className="mt-3 flex w-fit max-w-full items-start gap-2 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+            <Info className="w-4 h-4 shrink-0 mt-0.5" />
+            No listings in {fallbackFrom} yet, so we're showing properties from all cities.
+          </p>
+        )}
+        {locationError && !fallbackFrom && (
+          <p className="text-xs text-slate-400 font-semibold mt-2">{locationError}</p>
+        )}
 
-            {notFound && (
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800 mb-6">
-                <p className="font-semibold">
-                  No listings found{locationLabel ? ` in ${locationLabel}` : ''}
-                  {intentLabel ? ` for ${intentLabel}` : ''}.
-                </p>
-                <p className="text-xs text-amber-700 mt-2">
-                  Try a nearby location or clear filters to see more properties.
-                </p>
-                <Button
-                  variant="secondary"
-                  className="mt-3"
-                  onClick={() => onSearch?.({})}
-                >
-                  Clear filters
-                </Button>
-              </div>
-            )}
+        {/* Intent */}
+        <div role="tablist" aria-label="Looking to" className="mt-5 inline-flex flex-wrap gap-1 p-1 bg-slate-100 rounded-2xl">
+          {INTENTS.map((option) => (
+            <button
+              key={option.key || 'all'}
+              type="button"
+              role="tab"
+              aria-selected={intent === option.key}
+              onClick={() => setIntent(option.key)}
+              className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors duration-150 ${
+                intent === option.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </header>
 
-            <div className="max-h-[calc(100vh-12rem)] overflow-y-auto pr-4 overscroll-contain">
-              <div className="space-y-8 pr-2">
-              <div>
-                <h3 className="font-bold text-sm uppercase tracking-wider text-slate-900 mb-4 flex items-center gap-2">
-                  <Filter className="w-4 h-4" /> Budget Range
-                </h3>
-                <div className="flex gap-3">
-                  <input
-                    type="number"
-                    min="0"
-                    value={minPrice}
-                    onChange={(event) => setMinPrice(event.target.value)}
-                    placeholder="Min"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-full px-4 py-2 text-sm font-semibold text-slate-700 focus:outline-none"
-                  />
-                  <input
-                    type="number"
-                    min="0"
-                    value={maxPrice}
-                    onChange={(event) => setMaxPrice(event.target.value)}
-                    placeholder="Max"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-full px-4 py-2 text-sm font-semibold text-slate-700 focus:outline-none"
-                  />
-                </div>
-                <p className="text-xs text-slate-400 font-semibold mt-3">Prices are in INR</p>
-              </div>
+      <div className="flex gap-10">
+        {/* Desktop filters */}
+        <aside className="hidden lg:block w-72 shrink-0" aria-label="Filters">
+          <div className="sticky top-28 max-h-[calc(100vh-8rem)] overflow-y-auto overscroll-contain pr-3 -mr-3">
+            <div className="flex items-center justify-between">
+              <h2 className="font-black text-slate-900 flex items-center gap-2">
+                <SlidersHorizontal className="w-4 h-4" /> Filters
+              </h2>
+              {activeChips.length > 0 && (
+                <button type="button" onClick={clearAll} className="text-sm font-semibold text-emerald-600 hover:underline">
+                  Clear all
+                </button>
+              )}
+            </div>
+            <FilterPanel filters={filters} intent={intent} update={update} />
+          </div>
+        </aside>
 
-              <div className="border-t border-slate-100 pt-8">
-                <h3 className="font-bold text-sm uppercase tracking-wider text-slate-900 mb-4">Area Range</h3>
-                <div className="flex gap-3">
-                  <input
-                    type="number"
-                    min="0"
-                    value={minArea}
-                    onChange={(event) => setMinArea(event.target.value)}
-                    placeholder="Min sq ft"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-full px-4 py-2 text-sm font-semibold text-slate-700 focus:outline-none"
-                  />
-                  <input
-                    type="number"
-                    min="0"
-                    value={maxArea}
-                    onChange={(event) => setMaxArea(event.target.value)}
-                    placeholder="Max sq ft"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-full px-4 py-2 text-sm font-semibold text-slate-700 focus:outline-none"
-                  />
-                </div>
-              </div>
+        {/* Results */}
+        <div className="flex-1 min-w-0">
+          {/* Toolbar */}
+          <div className="sticky top-[5.25rem] z-30 -mx-4 px-4 sm:mx-0 sm:px-0 py-3 bg-white/95 border-b border-slate-100 mb-6">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setDrawerOpen(true)}
+                className="lg:hidden inline-flex items-center gap-2 px-4 py-2 rounded-full border border-slate-200 text-sm font-bold text-slate-800 hover:border-slate-400"
+              >
+                <SlidersHorizontal className="w-4 h-4" />
+                Filters
+                {activeChips.length > 0 && (
+                  <span className="min-w-5 h-5 px-1.5 rounded-full bg-emerald-500 text-white text-[11px] flex items-center justify-center">
+                    {activeChips.length}
+                  </span>
+                )}
+              </button>
 
-              <div className="border-t border-slate-100 pt-8">
-                <h3 className="font-bold text-sm uppercase tracking-wider text-slate-900 mb-4">Bedrooms</h3>
-                <div className="flex flex-wrap gap-2">
-                  {bhkOptions.map((bhk) => (
+              <div className="ml-auto flex items-center gap-2 min-w-0">
+                <div className="hidden sm:inline-flex p-1 bg-slate-100 rounded-full" role="group" aria-label="View">
+                  {[
+                    { mode: 'list', label: 'List', icon: <LayoutGrid className="w-4 h-4" /> },
+                    { mode: 'map', label: 'Map', icon: <MapIcon className="w-4 h-4" /> },
+                  ].map(({ mode, label, icon }) => (
                     <button
-                      key={bhk.label}
-                      onClick={() => setSelectedBhk(selectedBhk === bhk.value ? '' : bhk.value)}
-                      className={`px-4 py-2 rounded-full text-sm font-semibold transition-colors ${
-                        selectedBhk === bhk.value
-                          ? 'bg-slate-900 text-white'
-                          : 'bg-slate-50 hover:bg-slate-900 hover:text-white text-slate-700'
+                      key={mode}
+                      type="button"
+                      aria-pressed={viewMode === mode}
+                      onClick={() => onViewModeChange?.(mode)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-colors duration-150 ${
+                        viewMode === mode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'
                       }`}
                     >
-                      {bhk.label}
+                      {icon}
+                      <span className="hidden sm:inline">{label}</span>
                     </button>
                   ))}
                 </div>
-              </div>
-
-              <div className="border-t border-slate-100 pt-8">
-                <h3 className="font-bold text-sm uppercase tracking-wider text-slate-900 mb-4">Property Type</h3>
-                <div className="space-y-3">
-                  {propertyTypeOptions.map((type) => (
-                    <label key={type.value} className="flex items-center gap-3 text-slate-700 font-medium cursor-pointer group">
-                      <input
-                        type="radio"
-                        name="propertyType"
-                        value={type.value}
-                        checked={selectedType === type.value}
-                        onChange={() => setSelectedType(type.value)}
-                        className="accent-emerald-500 w-4 h-4"
-                      />
-                      {type.label}
-                    </label>
+                <label className="sr-only" htmlFor="listings-sort">Sort by</label>
+                <select
+                  id="listings-sort"
+                  value={sortBy}
+                  onChange={(e) => onSortChange?.(e.target.value)}
+                  className="bg-slate-100 rounded-full pl-4 pr-8 py-2 text-sm font-semibold text-slate-800 outline-none cursor-pointer"
+                >
+                  {SORT_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
                   ))}
-                  <button
-                    onClick={() => setSelectedType('')}
-                    className="text-xs font-semibold text-slate-400 hover:text-slate-900"
-                  >
-                    Clear selection
-                  </button>
-                </div>
-              </div>
-
-              <div className="border-t border-slate-100 pt-8">
-                <h3 className="font-bold text-sm uppercase tracking-wider text-slate-900 mb-4">Furnishing</h3>
-                <div className="space-y-3">
-                  {['unfurnished', 'semi-furnished', 'fully-furnished'].map((type) => (
-                    <label key={type} className="flex items-center gap-3 text-slate-700 font-medium cursor-pointer group capitalize">
-                      <input
-                        type="radio"
-                        name="furnishingType"
-                        value={type}
-                        checked={furnishing === type}
-                        onChange={() => setFurnishing(type)}
-                        className="accent-emerald-500 w-4 h-4"
-                      />
-                      {type.replace('-', ' ')}
-                    </label>
-                  ))}
-                  <button
-                    onClick={() => setFurnishing('')}
-                    className="text-xs font-semibold text-slate-400 hover:text-slate-900"
-                  >
-                    Clear selection
-                  </button>
-                </div>
-              </div>
-
-              <div className="border-t border-slate-100 pt-8">
-                <h3 className="font-bold text-sm uppercase tracking-wider text-slate-900 mb-4">Posted By</h3>
-                <div className="space-y-3">
-                  {['owner', 'broker', 'builder'].map((type) => (
-                    <label key={type} className="flex items-center gap-3 text-slate-700 font-medium cursor-pointer group capitalize">
-                      <input
-                        type="radio"
-                        name="postedBy"
-                        value={type}
-                        checked={postedBy === type}
-                        onChange={() => setPostedBy(type)}
-                        className="accent-emerald-500 w-4 h-4"
-                      />
-                      {type}
-                    </label>
-                  ))}
-                  <button
-                    onClick={() => setPostedBy('')}
-                    className="text-xs font-semibold text-slate-400 hover:text-slate-900"
-                  >
-                    Clear selection
-                  </button>
-                </div>
-              </div>
-
-              <div className="border-t border-slate-100 pt-8">
-                <h3 className="font-bold text-sm uppercase tracking-wider text-slate-900 mb-4">Amenities</h3>
-                <div className="space-y-3">
-                  {amenityOptions.map((amenity) => (
-                    <label key={amenity} className="flex items-center gap-3 text-slate-700 font-medium cursor-pointer group">
-                      <input
-                        type="checkbox"
-                        value={amenity}
-                        checked={selectedAmenities.includes(amenity)}
-                        onChange={() => toggleAmenity(amenity)}
-                        className="accent-emerald-500 w-4 h-4"
-                      />
-                      {amenity}
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div className="border-t border-slate-100 pt-8">
-                <label className="flex items-center gap-3 text-slate-700 font-medium cursor-pointer group">
-                  <input
-                    type="checkbox"
-                    checked={verifiedOnly}
-                    onChange={(event) => setVerifiedOnly(event.target.checked)}
-                    className="accent-emerald-500 w-4 h-4"
-                  />
-                  Verified Listings Only
-                </label>
+                </select>
               </div>
             </div>
-            </div>
-          </div>
-        </div>
 
-        {/* Main Listing Grid */}
-        <div className="flex-1">
-          <div className="flex flex-wrap items-center gap-2 mb-6">
-            <span className="text-xs uppercase tracking-widest text-slate-400 font-semibold mr-2">
-              Looking to
-            </span>
-            {intentOptions.map((intent) => (
-              <button
-                key={intent.key}
-                type="button"
-                onClick={() => handleIntentChange(intent.key)}
-                className={`px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wider transition-colors ${
-                  activeIntent === intent.key
-                    ? 'bg-emerald-500 text-white'
-                    : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-900 hover:text-slate-900'
-                }`}
-              >
-                {intent.label}
-              </button>
-            ))}
-          </div>
-          {/* Top Bar */}
-          <div className="flex items-center justify-between mb-8 pb-4 border-b border-slate-100">
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => onViewModeChange?.('map')}
-                className={`px-3 py-1.5 rounded-full text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-colors ${
-                  isMapView
-                    ? 'bg-slate-900 text-white'
-                    : 'bg-white/80 backdrop-blur-md text-slate-900 border border-slate-200'
-                }`}
-              >
-                Map View
-              </button>
-              <button
-                type="button"
-                onClick={() => onViewModeChange?.('list')}
-                className={`px-3 py-1.5 rounded-full text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-colors ${
-                  !isMapView
-                    ? 'bg-slate-900 text-white'
-                    : 'bg-white/80 backdrop-blur-md text-slate-900 border border-slate-200'
-                }`}
-              >
-                List View
-              </button>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-medium text-slate-500 hidden sm:block">Sort by</span>
-              <select
-                value={sortBy}
-                onChange={(event) => onSortChange?.(event.target.value)}
-                className="bg-slate-50 border-none rounded-full px-5 py-2.5 text-sm font-semibold text-slate-700 focus:ring-0 cursor-pointer"
-              >
-                <option value="newest">Newest First</option>
-                <option value="price_asc">Price: Low to High</option>
-                <option value="price_desc">Price: High to Low</option>
-              </select>
+            {activeChips.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 mt-3">
+                {activeChips.map((chip) => (
+                  <button
+                    key={chip.key}
+                    type="button"
+                    onClick={() => update(chip.patch)}
+                    aria-label={`Remove filter ${chip.label}`}
+                    className="inline-flex items-center gap-1.5 pl-3 pr-2 py-1.5 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold hover:bg-emerald-100 transition-colors duration-150"
+                  >
+                    {chip.label}
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                ))}
+                <button type="button" onClick={clearAll} className="text-xs font-bold text-slate-500 hover:text-slate-900 px-1">
+                  Clear all
+                </button>
+              </div>
+            )}
+
+            {/* Refresh indicator: results stay on screen while the next set loads */}
+            <div className={`absolute left-0 right-0 bottom-0 h-0.5 overflow-hidden transition-opacity duration-200 ${isRefreshing ? 'opacity-100' : 'opacity-0'}`}>
+              <div className="h-full w-1/3 bg-emerald-500 animate-[listings-progress_1s_ease-in-out_infinite]" />
             </div>
           </div>
 
-          {isMapView && (
-            <div className="mb-8 rounded-3xl border border-slate-100 bg-white overflow-hidden">
-              <div className="relative h-64 sm:h-72 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-700">
-                <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.35),_transparent_55%)]" />
-                <div className="absolute inset-0 opacity-10 bg-[linear-gradient(90deg,_rgba(255,255,255,0.15)_1px,_transparent_1px),_linear-gradient(180deg,_rgba(255,255,255,0.15)_1px,_transparent_1px)] bg-[size:40px_40px]" />
+          {isMapView && properties.length > 0 && (
+            <div className="mb-8 rounded-3xl border border-slate-100 overflow-hidden">
+              <div className="relative h-72 bg-slate-900">
+                <div className="absolute inset-0 opacity-10 bg-[linear-gradient(90deg,_rgba(255,255,255,0.4)_1px,_transparent_1px),_linear-gradient(180deg,_rgba(255,255,255,0.4)_1px,_transparent_1px)] bg-[size:40px_40px]" />
                 {mapPoints.length ? (
-                  mapPoints.slice(0, 24).map((point) => (
+                  mapPoints.map((point) => (
                     <button
                       key={point.id}
                       type="button"
                       onClick={() => onPropertySelect?.(point.property)}
-                      className="absolute group -translate-x-1/2 -translate-y-1/2"
+                      className="absolute group -translate-x-1/2 -translate-y-1/2 p-1.5"
                       style={{ left: `${point.x}%`, top: `${point.y}%` }}
+                      aria-label={`Open property at ${point.price}`}
                     >
-                      <span className="w-3 h-3 rounded-full bg-emerald-400 shadow-[0_0_0_6px_rgba(16,185,129,0.15)] block" />
-                      <span className="absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-white px-3 py-1 text-[10px] font-semibold text-slate-700 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {point.price || 'View'}
+                      <span className="w-3 h-3 rounded-full bg-emerald-400 ring-4 ring-emerald-400/20 block" />
+                      <span className="pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-slate-800 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-150">
+                        {point.price}
                       </span>
                     </button>
                   ))
                 ) : (
-                  <div className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-white/70">
-                    Map view needs listings with coordinates.
+                  <div className="absolute inset-0 flex items-center justify-center text-sm font-semibold text-white/70">
+                    These listings don't have map locations yet.
                   </div>
                 )}
-                <div className="absolute bottom-4 left-4 text-xs font-semibold text-white/80">
-                  {locationLabel || 'Your area'}
-                </div>
               </div>
-              <div className="p-5">
-                <p className="text-sm font-semibold text-slate-800">{listingsCount} listings mapped</p>
-                <p className="text-xs text-slate-500 mt-1">
-                  Tap a pin to jump to a property card.
-                </p>
-              </div>
+              <p className="px-5 py-3 text-xs text-slate-500">
+                {mapPoints.length} of {properties.length} listings on this page have a location. Tap a pin to open it.
+              </p>
             </div>
           )}
 
-          <motion.div 
-            variants={staggerContainer} initial="hidden" animate="show"
-            className={`grid gap-8 ${
-              isMapView
-                ? 'grid-cols-1'
-                : 'grid-cols-1 md:grid-cols-2 xl:grid-cols-2'
-            }`}
-          >
-            {notFound ? (
-              <div className="text-slate-500 font-semibold">
-                No listings match your search. Try another locality or clear filters.
-              </div>
-            ) : isLoading && !properties.length ? (
-              <div className="text-slate-400 font-semibold">Loading listings near you...</div>
-            ) : properties.length ? (
-              properties.map(prop => (
+          {isFirstLoad ? (
+            <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 2xl:grid-cols-3">
+              {Array.from({ length: 6 }, (_, i) => <SkeletonCard key={i} />)}
+            </div>
+          ) : properties.length ? (
+            <div
+              className={`grid gap-6 grid-cols-1 sm:grid-cols-2 2xl:grid-cols-3 transition-opacity duration-200 ${
+                isRefreshing ? 'opacity-50 pointer-events-none' : 'opacity-100'
+              }`}
+              aria-busy={isRefreshing}
+            >
+              {properties.map((property, index) => (
                 <PropertyCard
-                  key={prop.id}
-                  property={prop}
+                  key={property.id}
+                  index={index}
+                  property={property}
                   onClick={onPropertySelect}
-                  isSaved={savedPropertyIds?.has(String(prop.id))}
+                  isSaved={savedPropertyIds?.has(String(property.id))}
                   onToggleSave={onToggleSave}
                 />
-              ))
-            ) : (
-              <div className="text-slate-500 font-semibold">
-                No listings found with the current filters.
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center text-center py-20 px-6 rounded-3xl border border-dashed border-slate-200">
+              <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center mb-4">
+                <SearchX className="w-6 h-6 text-slate-400" />
               </div>
-            )}
-          </motion.div>
-          
+              <h2 className="text-lg font-bold text-slate-900">No properties match these filters</h2>
+              <p className="text-sm text-slate-500 mt-1 max-w-sm">
+                Try removing a filter or widening your budget.
+              </p>
+              {activeChips.length > 0 && (
+                <button
+                  type="button"
+                  onClick={clearAll}
+                  className="mt-5 px-5 py-2.5 rounded-full bg-slate-900 text-white text-sm font-bold hover:bg-slate-700 transition-colors"
+                >
+                  Clear all filters
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex justify-center items-center gap-2 mt-16">
+          {totalPages > 1 && properties.length > 0 && (
+            <nav className="flex justify-center items-center gap-1.5 mt-14" aria-label="Pagination">
               <button
                 type="button"
                 onClick={() => onPageChange?.(currentPage - 1)}
                 disabled={currentPage <= 1}
-                className={`w-12 h-12 flex items-center justify-center rounded-full border border-slate-200 transition-colors ${
-                  currentPage <= 1
-                    ? 'text-slate-300 cursor-not-allowed'
-                    : 'hover:bg-slate-50 text-slate-500'
-                }`}
+                aria-label="Previous page"
+                className="w-10 h-10 flex items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:text-slate-300 disabled:hover:bg-transparent disabled:cursor-not-allowed"
               >
                 <ChevronLeft className="w-5 h-5" />
               </button>
-              {pageNumbers().map((page, index) => (
-                page === 'ellipsis' ? (
-                  <span key={`ellipsis-${index}`} className="text-slate-400 font-bold px-2">...</span>
+              {pageNumbers.map((page) => (
+                typeof page === 'string' ? (
+                  <span key={page} className="w-8 text-center text-slate-400 font-bold">…</span>
                 ) : (
                   <button
-                    key={`page-${page}`}
+                    key={page}
                     type="button"
                     onClick={() => onPageChange?.(page)}
-                    className={`w-12 h-12 flex items-center justify-center rounded-full font-bold transition-colors ${
-                      page === currentPage
-                        ? 'bg-slate-900 text-white'
-                        : 'border border-slate-200 hover:bg-slate-50 text-slate-700'
+                    aria-current={page === currentPage ? 'page' : undefined}
+                    className={`w-10 h-10 flex items-center justify-center rounded-full text-sm font-bold transition-colors duration-150 ${
+                      page === currentPage ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
                     }`}
                   >
                     {page}
@@ -615,19 +663,70 @@ const ListingsPage = ({
                 type="button"
                 onClick={() => onPageChange?.(currentPage + 1)}
                 disabled={currentPage >= totalPages}
-                className={`w-12 h-12 flex items-center justify-center rounded-full border border-slate-200 transition-colors ${
-                  currentPage >= totalPages
-                    ? 'text-slate-300 cursor-not-allowed'
-                    : 'hover:bg-slate-50 text-slate-500'
-                }`}
+                aria-label="Next page"
+                className="w-10 h-10 flex items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:text-slate-300 disabled:hover:bg-transparent disabled:cursor-not-allowed"
               >
                 <ChevronRight className="w-5 h-5" />
               </button>
-            </div>
+            </nav>
           )}
         </div>
       </div>
-    </motion.div>
+
+      {/* Mobile filter drawer */}
+      <AnimatePresence>
+        {drawerOpen && (
+          <div className="fixed inset-0 z-[60] lg:hidden" role="dialog" aria-modal="true" aria-label="Filters">
+            <Motion.div
+              className="absolute inset-0 bg-slate-900/40"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={() => setDrawerOpen(false)}
+            />
+            <Motion.div
+              className="absolute inset-x-0 bottom-0 max-h-[88dvh] flex flex-col bg-white rounded-t-3xl"
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
+            >
+              <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-slate-100">
+                <h2 className="font-black text-lg text-slate-900">Filters</h2>
+                <div className="flex items-center gap-3">
+                  {activeChips.length > 0 && (
+                    <button type="button" onClick={clearAll} className="text-sm font-semibold text-emerald-600">
+                      Clear all
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setDrawerOpen(false)}
+                    aria-label="Close filters"
+                    className="p-2 rounded-full hover:bg-slate-100"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5">
+                <FilterPanel filters={filters} intent={intent} update={update} />
+              </div>
+              <div className="shrink-0 p-4 border-t border-slate-100 pb-[max(1rem,env(safe-area-inset-bottom))]">
+                <button
+                  type="button"
+                  onClick={() => setDrawerOpen(false)}
+                  className="w-full py-3.5 rounded-full bg-slate-900 text-white font-bold"
+                >
+                  {isLoading ? 'Updating…' : `Show ${total.toLocaleString('en-IN')} ${total === 1 ? 'property' : 'properties'}`}
+                </button>
+              </div>
+            </Motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </Motion.div>
   );
 };
 

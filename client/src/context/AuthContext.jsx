@@ -58,7 +58,7 @@ export const AuthProvider = ({ children }) => {
 				persistSession(readStoredToken(), currentUser)
 			}
 			return currentUser
-		} catch (err) {
+		} catch {
 			clearSession({ redirectTo: '/login', state: { from: location.pathname } })
 			return null
 		}
@@ -92,6 +92,14 @@ export const AuthProvider = ({ children }) => {
 				persistSession(readStoredToken(), updatedUser)
 			}
 			return updatedUser
+		},
+		[persistSession],
+	)
+
+	// Replace the stored user with a fresh copy from the server (e.g. after verifying email or phone)
+	const updateUser = useCallback(
+		(nextUser) => {
+			if (nextUser) persistSession(readStoredToken(), nextUser)
 		},
 		[persistSession],
 	)
@@ -159,9 +167,10 @@ export const AuthProvider = ({ children }) => {
 			logout,
 			refreshUser,
 			updateProfile,
+			updateUser,
 			setError,
 		}),
-		[user, token, isLoading, error, login, logout, refreshUser, updateProfile],
+		[user, token, isLoading, error, login, logout, refreshUser, updateProfile, updateUser],
 	)
 
 	return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -1,13 +1,15 @@
 import apiClient from './authService'
 
 // Posters type the price as plain rupees; show it the way buyers read it
-const formatPrice = (price) => {
+export const formatPrice = (price) => {
   if (!/^\d+$/.test(String(price))) return price || ''
   const value = Number(price)
   if (value >= 10000000) return `₹${+(value / 10000000).toFixed(2)} Cr`
   if (value >= 100000) return `₹${+(value / 100000).toFixed(2)} L`
   return `₹${value.toLocaleString('en-IN')}`
 }
+
+const isRental = (lookingTo) => lookingTo === 'rent' || lookingTo === 'pg'
 
 export const normalizeProperty = (property) => {
   const areaFallback = property.plotArea
@@ -18,12 +20,14 @@ export const normalizeProperty = (property) => {
     id: property._id || property.id,
     title: property.title || property.selectedType || 'Property',
     price: formatPrice(property.price || property.displayPrice),
+    priceSuffix: isRental(property.lookingTo) ? '/month' : '',
     bhk: property.bhk || property.bedrooms || 'N/A',
     area: property.area || areaFallback,
     location: property.locationLabel || `${property.locality || ''}${property.city ? `, ${property.city}` : ''}`,
     locality: property.locality || '',
     city: property.city || '',
-    dealer: property.dealer || property.role || 'Verified Agent',
+    dealer: property.dealer || 'Owner',
+    isVerified: Boolean(property.isVerified),
     tags: Array.isArray(property.tags) ? property.tags : [],
     image: property.image || (property.images && property.images[0]) || '',
     type: property.type || property.selectedType || 'Property',
@@ -49,6 +53,11 @@ export const propertyService = {
   },
 
   // Sends one JPEG blob, returns the hosted photo URL
+  async deleteProperty(propertyId) {
+    const response = await apiClient.delete(`/properties/${propertyId}`)
+    return response.data
+  },
+
   async uploadPhoto(blob) {
     const response = await apiClient.post('/uploads', blob, {
       headers: { 'Content-Type': 'image/jpeg' },
@@ -122,10 +131,5 @@ export const propertyService = {
       : []
     
     return { properties, total: data.total || properties.length }
-  },
-
-  async contactPropertyOwner(propertyId, message) {
-    const response = await apiClient.post(`/properties/${propertyId}/contact`, { message })
-    return response.data
   },
 }

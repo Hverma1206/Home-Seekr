@@ -13,7 +13,7 @@ const IMAGE_LIBRARY = {
   apartment: [
     'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1200&q=80',
     'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=1200&q=80',
-    'https://images.unsplash.com/photo-1600607687931-cebf0746e426?auto=format&fit=crop&w=1200&q=80',
+    'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=1200&q=80',
     'https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?auto=format&fit=crop&w=1200&q=80',
   ],
   villa: [
@@ -22,7 +22,7 @@ const IMAGE_LIBRARY = {
     'https://images.unsplash.com/photo-1600607686527-6fb886090705?auto=format&fit=crop&w=1200&q=80',
   ],
   builderFloor: [
-    'https://images.unsplash.com/photo-1600607687931-cebf0746e426?auto=format&fit=crop&w=1200&q=80',
+    'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=1200&q=80',
     'https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?auto=format&fit=crop&w=1200&q=80',
   ],
   commercial: [

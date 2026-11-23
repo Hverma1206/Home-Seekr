@@ -41,46 +41,34 @@ apiClient.interceptors.response.use(
 )
 
 export const authService = {
-	/**
-	 * Send OTP to phone number
-	 * @param {string} phoneNumber - Phone number
-	 * @param {string} email - Email address
-	 */
-	sendOTP: (phoneNumber, email) => {
-		const payload = { phoneNumber }
-		if (email) {
-			payload.email = email
-		}
-		return apiClient.post('/auth/send-otp', payload)
-	},
+	/** Send an OTP; the response says whether this number is a new signup (data.data.isNewUser) */
+	sendOTP: (phoneNumber) => apiClient.post('/auth/send-otp', { phoneNumber }),
 
 	/**
-	 * Verify OTP
-	 * @param {object} data - { phoneNumber, otp, email, password, firstName, lastName }
+	 * Verify OTP and log in
+	 * @param {object} data - { phoneNumber, otp, firstName?, lastName?, role?, companyName?, email? }
 	 */
 	verifyOTP: (data) => apiClient.post('/auth/verify-otp', data),
 
-	/**
-	 * Resend OTP
-	 * @param {string} phoneNumber - Phone number
-	 * @param {string} email - Email address
-	 */
-	resendOTP: (phoneNumber, email) => {
-		const payload = { phoneNumber }
-		if (email) {
-			payload.email = email
-		}
-		return apiClient.post('/auth/resend-otp', payload)
-	},
+	resendOTP: (phoneNumber) => apiClient.post('/auth/resend-otp', { phoneNumber }),
 
-	/**
-	 * Get current authenticated user
-	 */
+	// TEMPORARY email + password auth (until SMS OTP is integrated)
+	/** @param {object} data - { email, password, phoneNumber, firstName, lastName?, role?, companyName? } */
+	registerWithEmail: (data) => apiClient.post('/auth/register', data),
+
+	loginWithEmail: (email, password) => apiClient.post('/auth/login', { email, password }),
+
+	// Verifying the logged-in account's email and phone number. Each verify call returns data.data.user.
+	sendEmailOtp: () => apiClient.post('/auth/email/send-otp'),
+	verifyEmailOtp: (otp) => apiClient.post('/auth/email/verify-otp', { otp }),
+	/** @param {string} [phoneNumber] - verify this number instead of the one given at signup */
+	sendPhoneOtp: (phoneNumber) => apiClient.post('/auth/phone/send-otp', phoneNumber ? { phoneNumber } : {}),
+	verifyPhoneOtp: (otp) => apiClient.post('/auth/phone/verify-otp', { otp }),
+
+	/** Get current authenticated user */
 	getMe: () => apiClient.get('/auth/me'),
 
-	/**
-	 * Update authenticated user profile
-	 */
+	/** Update authenticated user profile */
 	updateProfile: (payload) => apiClient.put('/user/profile', payload),
 }
 

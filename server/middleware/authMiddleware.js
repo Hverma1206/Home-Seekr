@@ -20,6 +20,11 @@ export const protect = async (req, res, next) => {
 			return res.status(401).json({ message: 'Not authorized, user not found' })
 		}
 
+		// A suspended account loses access immediately, even with a token issued before the ban
+		if (user.isBanned) {
+			return res.status(401).json({ message: 'This account has been suspended' })
+		}
+
 		req.user = user
 		return next()
 	} catch (error) {
@@ -29,4 +34,16 @@ export const protect = async (req, res, next) => {
 				: 'Not authorized, token invalid'
 		return res.status(401).json({ message })
 	}
+}
+
+// Posting a listing or contacting a poster shares the phone number with the other side, so it has to be a number
+// the account has proven by OTP. Use after `protect`.
+export const requireVerifiedPhone = (req, res, next) => {
+	if (req.user?.isPhoneVerified && req.user?.phoneNumber) {
+		return next()
+	}
+	return res.status(403).json({
+		code: 'PHONE_NOT_VERIFIED',
+		message: 'Verify your phone number first. It is shared with the people you deal with here.',
+	})
 }

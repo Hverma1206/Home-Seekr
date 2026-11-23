@@ -1,85 +1,74 @@
-import { useState, useRef, useEffect } from 'react'
-import { motion } from 'framer-motion'
+import { useRef } from 'react'
 
-export default function OTPInput({ value, onChange, length = 6, disabled = false }) {
-	const [otp, setOtp] = useState(Array(length).fill(''))
+// Controlled OTP boxes: `value` is the digit string, `onChange` receives the new string.
+// Supports typing, backspace, arrow keys, pasting the whole code and SMS autofill.
+export default function OTPInput({ value = '', onChange, length = 6, disabled = false, autoFocus = false }) {
 	const inputRefs = useRef([])
+	const digits = Array.from({ length }, (_, i) => value[i] || '')
 
-	useEffect(() => {
-		if (value) {
-			const otpArray = value.toString().split('')
-			setOtp(otpArray.padEnd(length, ''))
-		}
-	}, [value, length])
+	const focusBox = (index) => {
+		inputRefs.current[Math.max(0, Math.min(length - 1, index))]?.focus()
+	}
+
+	const fillFrom = (index, text) => {
+		const incoming = text.replace(/\D/g, '')
+		if (!incoming) return
+		const next = [...digits]
+		incoming.split('').slice(0, length - index).forEach((digit, offset) => {
+			next[index + offset] = digit
+		})
+		onChange(next.join('').slice(0, length))
+		focusBox(index + incoming.length)
+	}
 
 	const handleChange = (index, event) => {
-		const { value } = event.target
-		if (isNaN(value)) return
-
-		const newOtp = [...otp]
-		newOtp[index] = value.substring(value.length - 1)
-		setOtp(newOtp)
-
-		// Call onChange with the complete OTP
-		onChange(newOtp.join(''))
-
-		// Move to next input
-		if (value && index < length - 1) {
-			inputRefs.current[index + 1].focus()
+		const typed = event.target.value.replace(/\D/g, '')
+		if (!typed) {
+			const next = [...digits]
+			next[index] = ''
+			onChange(next.join(''))
+			return
 		}
+		// More than one character means autofill or a fast paste into a single box
+		fillFrom(index, typed.length > 1 ? typed : typed.slice(-1))
 	}
 
 	const handleKeyDown = (index, event) => {
-		if (event.key === 'Backspace' && !otp[index] && index > 0) {
-			inputRefs.current[index - 1].focus()
+		if (event.key === 'Backspace' && !digits[index] && index > 0) {
+			event.preventDefault()
+			const next = [...digits]
+			next[index - 1] = ''
+			onChange(next.join(''))
+			focusBox(index - 1)
 		}
-
-		// Move to previous on left arrow
-		if (event.key === 'ArrowLeft' && index > 0) {
-			inputRefs.current[index - 1].focus()
-		}
-
-		// Move to next on right arrow
-		if (event.key === 'ArrowRight' && index < length - 1) {
-			inputRefs.current[index + 1].focus()
-		}
+		if (event.key === 'ArrowLeft') focusBox(index - 1)
+		if (event.key === 'ArrowRight') focusBox(index + 1)
 	}
 
-	const handlePaste = (event) => {
-		const pastedValue = event.clipboardData.getData('text').replace(/\D/g, '')
-		if (pastedValue) {
-			event.preventDefault()
-			const newOtp = pastedValue.split('').slice(0, length)
-			setOtp(newOtp.padEnd(length, ''))
-			onChange(newOtp.join(''))
-
-			if (newOtp.length === length) {
-				inputRefs.current[length - 1].blur()
-			} else {
-				inputRefs.current[newOtp.length].focus()
-			}
-		}
+	const handlePaste = (index, event) => {
+		event.preventDefault()
+		fillFrom(index, event.clipboardData.getData('text'))
 	}
 
 	return (
-		<div className="flex justify-center gap-2 sm:gap-3">
-			{otp.map((value, index) => (
-				<motion.input
+		<div className="flex justify-between gap-2 sm:gap-3">
+			{digits.map((digit, index) => (
+				<input
 					key={index}
 					ref={(ref) => (inputRefs.current[index] = ref)}
 					type="text"
 					inputMode="numeric"
-					maxLength="1"
-					value={value}
+					autoComplete={index === 0 ? 'one-time-code' : 'off'}
+					autoFocus={autoFocus && index === 0}
+					maxLength={index === 0 ? length : 1}
+					value={digit}
 					onChange={(e) => handleChange(index, e)}
 					onKeyDown={(e) => handleKeyDown(index, e)}
-					onPaste={handlePaste}
+					onPaste={(e) => handlePaste(index, e)}
+					onFocus={(e) => e.target.select()}
 					disabled={disabled}
-					initial={{ scale: 1 }}
-					whileFocus={{ scale: 1.05 }}
-					whileTap={{ scale: 0.95 }}
-					className="w-12 h-12 sm:w-14 sm:h-14 text-center text-xl sm:text-2xl font-bold border-2 border-emerald-300 rounded-lg focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-opacity-50 transition-colors disabled:bg-gray-100 disabled:cursor-not-allowed"
 					aria-label={`OTP digit ${index + 1}`}
+					className="w-11 h-14 sm:w-12 text-center text-xl font-black text-slate-900 border-2 border-slate-200 rounded-2xl focus:border-slate-900 outline-none transition-colors disabled:bg-slate-50 disabled:cursor-not-allowed"
 				/>
 			))}
 		</div>

@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Image, Loader2, Save } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
+import { Image, Loader2, Save, BadgeCheck, AlertCircle } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import Button from '../components/ui/Button'
+import VerifyContact from '../components/VerifyContact'
 import { userService } from '../services/userService'
 
 const parseNumber = (value) => {
@@ -9,11 +11,31 @@ const parseNumber = (value) => {
 	return Number.isFinite(parsed) ? parsed : undefined
 }
 
+const VerifiedBadge = ({ verified }) =>
+	verified ? (
+		<span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+			<BadgeCheck className="w-3.5 h-3.5" /> Verified
+		</span>
+	) : (
+		<span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-700">
+			<AlertCircle className="w-3.5 h-3.5" /> Not verified
+		</span>
+	)
+
 const ProfilePage = () => {
-	const { user, updateProfile } = useAuth()
+	const { user, updateProfile, updateUser } = useAuth()
+	const [searchParams] = useSearchParams()
+	// ?verify=phone or ?verify=email (linked from places that need a verified contact) opens that check right away
+	const [verifying, setVerifying] = useState(() => ({
+		email: searchParams.get('verify') === 'email',
+		phone: searchParams.get('verify') === 'phone',
+	}))
+	const openVerify = (channel) => setVerifying((v) => ({ ...v, [channel]: true }))
+	const phoneVerified = Boolean(user?.isPhoneVerified && user?.phoneNumber)
 	const [name, setName] = useState('')
 	const [email, setEmail] = useState('')
 	const [phoneNumber, setPhoneNumber] = useState('')
+	const [companyName, setCompanyName] = useState('')
 	const [profileImage, setProfileImage] = useState('')
 	const [bio, setBio] = useState('')
 	const [loading, setLoading] = useState(false)
@@ -44,6 +66,7 @@ const ProfilePage = () => {
 		setName(fullName)
 		setEmail(user.email || '')
 		setPhoneNumber(user.phoneNumber || '')
+		setCompanyName(user.companyName || '')
 		setProfileImage(user.profileImage || '')
 		setBio(user.bio || '')
 	}, [user])
@@ -77,7 +100,7 @@ const ProfilePage = () => {
 					alertNotifications:
 						preferences.notificationSettings?.alertNotifications ?? true,
 				})
-			} catch (err) {
+			} catch {
 				if (!isActive) return
 				setPrefsError('Unable to load preferences')
 			}
@@ -96,17 +119,11 @@ const ProfilePage = () => {
 		setError('')
 		setMessage('')
 
-		if (phoneNumber && !/^[6-9]\d{9}$/.test(phoneNumber)) {
-			setLoading(false)
-			setError('Please enter a valid 10-digit Indian mobile number')
-			return
-		}
-
 		try {
 			await updateProfile({
 				name,
 				email,
-				phoneNumber,
+				companyName,
 				profileImage,
 				bio,
 			})
@@ -211,31 +228,97 @@ const ProfilePage = () => {
 								/>
 							</div>
 							<div className="space-y-2">
-								<label className="text-xs uppercase tracking-widest text-slate-500 font-semibold">
-									Email
-								</label>
+								<div className="flex items-center justify-between gap-2">
+									<label htmlFor="profile-email" className="text-xs uppercase tracking-widest text-slate-500 font-semibold">
+										Email
+									</label>
+									{user?.email && email.trim().toLowerCase() === user.email && (
+										<VerifiedBadge verified={user.isEmailVerified} />
+									)}
+								</div>
 								<input
+									id="profile-email"
 									type="email"
 									value={email}
 									onChange={(event) => setEmail(event.target.value)}
 									className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 focus:border-slate-900 outline-none"
 									placeholder="you@example.com"
 								/>
+								{user?.email && !user.isEmailVerified && email.trim().toLowerCase() === user.email && !verifying.email && (
+									<button type="button" onClick={() => openVerify('email')} className="text-xs font-bold text-emerald-600 hover:underline">
+										Verify email →
+									</button>
+								)}
+								{email.trim() && email.trim().toLowerCase() !== (user?.email || '') && (
+									<p className="text-[11px] text-slate-400">Save your changes, then verify the new address.</p>
+								)}
 							</div>
 							<div className="space-y-2">
-								<label className="text-xs uppercase tracking-widest text-slate-500 font-semibold">
-									Phone
-								</label>
+								<div className="flex items-center justify-between gap-2">
+									<label htmlFor="profile-phone" className="text-xs uppercase tracking-widest text-slate-500 font-semibold">
+										Phone
+									</label>
+									{(phoneNumber || user?.pendingPhoneNumber) && <VerifiedBadge verified={phoneVerified} />}
+								</div>
 								<input
+									id="profile-phone"
 									type="tel"
-									value={phoneNumber}
-									onChange={(event) =>
-										setPhoneNumber(event.target.value.replace(/\D/g, '').slice(0, 10))
-									}
-									className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 focus:border-slate-900 outline-none"
-									placeholder="10-digit number"
+									value={phoneNumber || user?.pendingPhoneNumber ? `+91 ${phoneNumber || user.pendingPhoneNumber}` : ''}
+									placeholder="No number added"
+									readOnly
+									className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-500 outline-none cursor-not-allowed"
 								/>
+								{phoneVerified ? (
+									<p className="text-[11px] text-slate-400">Verified by OTP. You can log in with it, and it is shared with the people you contact.</p>
+								) : !verifying.phone && (
+									<button type="button" onClick={() => openVerify('phone')} className="text-xs font-bold text-emerald-600 hover:underline">
+										{user?.pendingPhoneNumber ? 'Verify phone number →' : 'Add & verify phone number →'}
+									</button>
+								)}
 							</div>
+							{(verifying.email || verifying.phone) && (
+								<div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4" id="verification">
+									{verifying.email && user?.email && !user.isEmailVerified && (
+										<VerifyContact
+											channel="email"
+											target={user.email}
+											autoSend
+											onVerified={(nextUser) => {
+												updateUser(nextUser)
+												setVerifying((v) => ({ ...v, email: false }))
+												setMessage('Email verified')
+											}}
+										/>
+									)}
+									{verifying.phone && !phoneVerified && (
+										<VerifyContact
+											channel="phone"
+											target={user?.pendingPhoneNumber || ''}
+											autoSend={Boolean(user?.pendingPhoneNumber)}
+											allowChangeNumber
+											onVerified={(nextUser) => {
+												updateUser(nextUser)
+												setVerifying((v) => ({ ...v, phone: false }))
+												setMessage('Phone number verified')
+											}}
+										/>
+									)}
+								</div>
+							)}
+							{['broker', 'builder'].includes(user?.role) && (
+								<div className="space-y-2">
+									<label className="text-xs uppercase tracking-widest text-slate-500 font-semibold">
+										{user.role === 'broker' ? 'Agency / Firm name' : 'Company name'}
+									</label>
+									<input
+										type="text"
+										value={companyName}
+										onChange={(event) => setCompanyName(event.target.value)}
+										className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 focus:border-slate-900 outline-none"
+										placeholder="Shown to buyers on your listings"
+									/>
+								</div>
+							)}
 							<div className="space-y-2">
 								<label className="text-xs uppercase tracking-widest text-slate-500 font-semibold">
 									Profile image

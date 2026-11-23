@@ -25,10 +25,11 @@ const userSchema = new mongoose.Schema(
 			minlength: 6,
 			select: false,
 		},
+		// The login / contact number. Email signups only get one here once they verify it by OTP (until then it sits
+		// in pendingPhoneNumber), so nobody can reserve someone else's number by typing it into a signup form.
+		// Unique among documents that have one: see the index below.
 		phoneNumber: {
 			type: String,
-			required: [true, 'Phone number is required'],
-			unique: true,
 			match: [
 				/^[6-9]\d{9}$/,
 				'Please provide a valid Indian mobile number',
@@ -37,6 +38,31 @@ const userSchema = new mongoose.Schema(
 		isPhoneVerified: {
 			type: Boolean,
 			default: false,
+		},
+		pendingPhoneNumber: {
+			type: String,
+			default: null,
+			match: [
+				/^[6-9]\d{9}$/,
+				'Please provide a valid Indian mobile number',
+			],
+		},
+		isEmailVerified: {
+			type: Boolean,
+			default: false,
+		},
+		emailOtpHash: {
+			type: String,
+			default: null,
+			select: false,
+		},
+		emailOtpSentAt: {
+			type: Date,
+			default: null,
+		},
+		emailOtpAttempts: {
+			type: Number,
+			default: 0,
 		},
 		otpSessionId: {
 			type: String,
@@ -183,6 +209,16 @@ userSchema.index(
 		unique: true,
 		partialFilterExpression: {
 			email: { $type: 'string' },
+		},
+	},
+)
+
+userSchema.index(
+	{ phoneNumber: 1 },
+	{
+		unique: true,
+		partialFilterExpression: {
+			phoneNumber: { $type: 'string' },
 		},
 	},
 )

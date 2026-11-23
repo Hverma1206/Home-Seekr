@@ -127,6 +127,10 @@ const propertySchema = new mongoose.Schema(
     brochure: String,
     virtualTourUrl: String,
 
+    // Listings imported from another site for testing: where the data came from. These have no poster phone.
+    sourceName: String,
+    sourceUrl: String,
+
     // Property Status & Verification
     status: {
       type: String,

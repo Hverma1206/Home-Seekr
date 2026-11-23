@@ -10,7 +10,6 @@ import PropertyDetailsPage from './pages/PropertyDetailsPage';
 import LoginSignupPage from './pages/LoginSignupPage';
 import PostPropertyPage from './pages/PostPropertyPage';
 import PropertyFormPage from './pages/PropertyFormPage';
-import OTPVerificationPage from './pages/OTPVerificationPage';
 import DashboardPage from './pages/DashboardPage';
 import ProfilePage from './pages/ProfilePage';
 import WishlistPage from './pages/WishlistPage';
@@ -97,14 +96,14 @@ function MainLayout() {
   const { coords, error: geoError } = useGeoLocation({ auto: true });
   const [currentView, setCurrentView] = useState('home');
   const [selectedProperty, setSelectedProperty] = useState(null);
-  const [redirectAfterLogin, setRedirectAfterLogin] = useState(null);
   const [properties, setProperties] = useState([]);
   const [activeFilters, setActiveFilters] = useState({});
-  const [propertiesMeta, setPropertiesMeta] = useState({ city: 'Bengaluru', locality: 'Indiranagar' });
+  const [propertiesMeta, setPropertiesMeta] = useState({ city: '', locality: '' });
   const [viewMode, setViewMode] = useState('list');
   const [sortBy, setSortBy] = useState('newest');
   const [currentPage, setCurrentPage] = useState(1);
-  const [propertiesLoading, setPropertiesLoading] = useState(false);
+  // Starts true so the first paint shows skeletons, not a flash of "no listings"
+  const [propertiesLoading, setPropertiesLoading] = useState(true);
   const [propertiesError, setPropertiesError] = useState('');
   const [savedPropertyIds, setSavedPropertyIds] = useState(new Set());
   const previousPathRef = useRef(location.pathname);
@@ -157,6 +156,7 @@ function MainLayout() {
   }, [location.key, location.pathname, location.state]);
 
   useEffect(() => {
+    // Only the latest request may update the page: a slow older response must not overwrite newer filters
     let isActive = true;
 
     const fetchListings = async () => {
@@ -164,111 +164,62 @@ function MainLayout() {
       setPropertiesError('');
 
       try {
-        let city = 'Bengaluru';
-        let locationContext = { city: 'Bengaluru', locality: 'Indiranagar', confidence: 'low' };
-
-        // If we have coordinates, derive the city
+        let locationContext = { city: 'Bengaluru', locality: '', confidence: 'low' };
         if (coords?.latitude && coords?.longitude) {
           const derivedContext = getLocationContext(coords.latitude, coords.longitude);
-          if (derivedContext?.city) {
-            locationContext = derivedContext;
-            city = derivedContext.city;
-          }
+          if (derivedContext?.city) locationContext = derivedContext;
         }
 
-        const sanitizedFilters = sanitizeFilters(activeFilters);
+        const filters = sanitizeFilters(activeFilters);
+        const userPickedLocation = Boolean(filters.city || filters.locality);
+        const pageParams = { sortBy, page: currentPage, limit: LISTINGS_PAGE_SIZE };
 
-        if (!sanitizedFilters.city && !sanitizedFilters.locality) {
-          sanitizedFilters.city = city;
-        }
-
-        const { properties: nextProperties, total, meta } = await propertyService.getProperties({
-          ...sanitizedFilters,
-          sortBy,
-          page: currentPage,
-          limit: LISTINGS_PAGE_SIZE,
+        // Without a chosen location, start with the visitor's (detected or default) city
+        let result = await propertyService.getProperties({
+          ...filters,
+          ...(userPickedLocation ? {} : { city: locationContext.city }),
+          ...pageParams,
         });
-        const metaLocation = meta?.location || {};
-        const listingsTotal = meta?.total || total || nextProperties.length;
-        const listingsPages = Math.max(1, Math.ceil(listingsTotal / LISTINGS_PAGE_SIZE));
+        let fallbackFrom = null;
+
+        // Nothing in the detected city: run the same search everywhere instead of showing an empty page
+        if (!userPickedLocation && !result.properties.length && isActive) {
+          result = await propertyService.getProperties({ ...filters, ...pageParams });
+          fallbackFrom = locationContext.city;
+        }
 
         if (!isActive) return;
 
-        const hasLocationFilter = Boolean(sanitizedFilters.city || sanitizedFilters.locality);
-
-        if (nextProperties.length) {
-          const resolvedCity = sanitizedFilters.city || metaLocation.city || locationContext.city || city;
-          setProperties(nextProperties);
-          setPropertiesMeta({
-            city: resolvedCity,
-            locality: sanitizedFilters.locality || metaLocation.locality || locationContext.locality,
-            total: listingsTotal,
-            page: meta?.page || currentPage,
-            pages: listingsPages,
-            limit: LISTINGS_PAGE_SIZE,
-            confidence: locationContext.confidence,
-            notFound: false,
-          });
-          return;
-        }
-
-        if (hasLocationFilter) {
-          const resolvedCity = sanitizedFilters.city || locationContext.city || city;
-          const notFound = listingsTotal === 0;
-          setProperties([]);
-          setPropertiesMeta({
-            city: resolvedCity,
-            locality: sanitizedFilters.locality || locationContext.locality,
-            total: listingsTotal,
-            page: meta?.page || currentPage,
-            pages: listingsPages,
-            limit: LISTINGS_PAGE_SIZE,
-            confidence: locationContext.confidence,
-            notFound,
-          });
-          return;
-        }
-
-        // Fallback to general properties only when no location filter is set
-        const { properties: fallbackProps, total: fallbackTotal, meta: fallbackMeta } = await propertyService.getProperties({
-          sortBy,
-          page: currentPage,
-          limit: LISTINGS_PAGE_SIZE,
-        });
-        const fallbackLocation = fallbackMeta?.location || {};
-        const resolvedFallbackCity = fallbackLocation.city || locationContext.city || city;
-        const fallbackPages = Math.max(1, Math.ceil((fallbackMeta?.total || fallbackTotal) / LISTINGS_PAGE_SIZE));
-        setProperties(fallbackProps);
+        const listingsTotal = result.meta?.total || result.total || 0;
+        setProperties(result.properties);
         setPropertiesMeta({
-          city: resolvedFallbackCity,
-          locality: fallbackLocation.locality || locationContext.locality,
-          total: fallbackMeta?.total || fallbackTotal,
-          page: fallbackMeta?.page || currentPage,
-          pages: fallbackPages,
+          city: userPickedLocation
+            ? filters.city || result.meta?.location?.city || ''
+            : fallbackFrom ? '' : locationContext.city,
+          locality: filters.locality || '',
+          total: listingsTotal,
+          page: result.meta?.page || currentPage,
+          pages: Math.max(1, Math.ceil(listingsTotal / LISTINGS_PAGE_SIZE)),
           limit: LISTINGS_PAGE_SIZE,
-          confidence: 'low',
-          notFound: false,
+          confidence: locationContext.confidence,
+          notFound: listingsTotal === 0,
+          fallbackFrom,
         });
       } catch (error) {
         if (!isActive) return;
         console.error('Error fetching properties:', error);
-        setPropertiesError(geoError || 'Unable to load live listings. Showing curated properties.');
-        // Keep showing mock properties on error
+        setPropertiesError('Unable to load listings right now. Please try again.');
       } finally {
-        if (isActive) {
-          setPropertiesLoading(false);
-        }
+        if (isActive) setPropertiesLoading(false);
       }
     };
 
-    // Fetch immediately on mount with default city
     fetchListings();
 
-    // Re-fetch when coordinates change
-    if (coords?.latitude && coords?.longitude) {
-      fetchListings();
-    }
-  }, [coords, geoError, activeFilters, sortBy, currentPage]);
+    return () => {
+      isActive = false;
+    };
+  }, [coords, activeFilters, sortBy, currentPage]);
 
   useEffect(() => {
     let isActive = true;
@@ -319,6 +270,15 @@ function MainLayout() {
     handleViewChange('listings', { filters });
   };
 
+  // Filter tweaks on the listings page: update in place. Replacing (not pushing) the history entry keeps Back
+  // meaningful and lets the filters survive a visit to a property and back; tweaks aren't saved as recent searches.
+  const handleFiltersChange = (filters) => {
+    const next = sanitizeFilters(filters);
+    setCurrentPage(1);
+    setActiveFilters(next);
+    navigate('/listings', { replace: true, state: { filters: next } });
+  };
+
   const handleSortChange = (nextSort) => {
     setSortBy(nextSort);
     setCurrentPage(1);
@@ -327,6 +287,7 @@ function MainLayout() {
   const handlePageChange = (nextPage) => {
     if (nextPage < 1 || nextPage === currentPage) return;
     setCurrentPage(nextPage);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleViewModeChange = (nextMode) => {
@@ -339,8 +300,7 @@ function MainLayout() {
     if (!propertyId) return;
 
     if (!isAuthenticated) {
-      setRedirectAfterLogin(location.pathname || '/');
-      handleViewChange('login');
+      handleViewChange('login', { from: location.pathname || '/' });
       return;
     }
 
@@ -388,23 +348,19 @@ function MainLayout() {
     } else if (view === 'compare') {
       navigate('/compare');
     } else if (view === 'login') {
-      navigate('/login');
+      // Come back to the page the user was on once they have logged in
+      const from = navState?.from || (location.pathname !== '/login' ? location.pathname : '/');
+      navigate('/login', { state: { from } });
     }
   };
 
+  // /post-property is a protected route: logged-out users are sent to login and brought back
   const handlePostProperty = () => {
-    if (isAuthenticated) {
-      navigate('/post-property');
-    } else {
-      setRedirectAfterLogin('/post-property');
-      handleViewChange('login');
-    }
+    navigate('/post-property');
   };
 
   const handleLoginSuccess = (redirectTo) => {
-    const redirect = redirectTo || redirectAfterLogin || '/';
-    setRedirectAfterLogin(null);
-    navigate(redirect);
+    navigate(redirectTo || '/', { replace: true });
   };
 
   return (
@@ -439,7 +395,7 @@ function MainLayout() {
               locationMeta={propertiesMeta}
               isLoading={propertiesLoading}
               locationError={geoError || propertiesError}
-              onSearch={handleSearch}
+              onFiltersChange={handleFiltersChange}
               activeFilters={activeFilters}
               savedPropertyIds={savedPropertyIds}
               onToggleSave={handleToggleSave}
@@ -525,9 +481,22 @@ export default function App() {
           </ProtectedRoute>
         }
       />
-      <Route path="/post-property" element={<PostPropertyPage />} />
-      <Route path="/post-property/form" element={<PropertyFormPage />} />
-      <Route path="/verify-otp" element={<OTPVerificationPage />} />
+      <Route
+        path="/post-property"
+        element={
+          <ProtectedRoute>
+            <PostPropertyPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/post-property/form"
+        element={
+          <ProtectedRoute>
+            <PropertyFormPage />
+          </ProtectedRoute>
+        }
+      />
       <Route path="/property/:propertyId" element={<MainLayout />} />
       <Route path="/projects" element={<MainLayout />} />
       <Route path="/projects/:projectId" element={<MainLayout />} />

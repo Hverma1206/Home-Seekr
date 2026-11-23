@@ -18,18 +18,37 @@ const involving = (user) =>
 
 const CONTACT_TYPES = ['phone_request', 'callback_request', 'email_inquiry']
 
-// Create a new lead (buyer contacts owner)
+// What a buyer may see about the poster once they have enquired
+const buildContact = (property, poster) => ({
+	name:
+		property.dealer
+		|| poster.companyName
+		|| [poster.firstName, poster.lastName].filter(Boolean).join(' ')
+		|| 'Owner',
+	// Imported test listings carry no real contact; the poster account's number is a placeholder
+	phoneNumber: property.sourceUrl ? null : poster.phoneNumber,
+	phoneNotSpecified: Boolean(property.sourceUrl),
+	role: property.postedByType || poster.role || 'owner',
+})
+
+const parseVisitDate = (value) => {
+	if (!value) return null
+	const date = new Date(value)
+	return Number.isNaN(date.getTime()) ? null : date
+}
+
+// Create a new lead (buyer contacts owner). Contacting the same listing again adds to the existing lead.
 export const createLead = async (req, res, next) => {
 	try {
-		const { propertyId, contactType, notes } = req.body
+		const { propertyId, contactType, notes, visitDate } = req.body
 		const buyerId = req.user._id
 
 		const property = await Property.findById(propertyId).populate(
 			'postedBy',
-			'firstName lastName phoneNumber companyName',
+			'firstName lastName phoneNumber companyName role',
 		)
 		if (!property || !property.postedBy || property.status !== 'active') {
-			return res.status(404).json({ message: 'Property not found' })
+			return res.status(404).json({ message: 'This listing is no longer available' })
 		}
 
 		const poster = property.postedBy
@@ -37,24 +56,39 @@ export const createLead = async (req, res, next) => {
 			return res.status(400).json({ message: 'This is your own listing' })
 		}
 
-		// The poster's number is shared only with a logged-in buyer who has sent an enquiry
-		const contact = {
-			name:
-				property.dealer
-				|| poster.companyName
-				|| [poster.firstName, poster.lastName].filter(Boolean).join(' ')
-				|| 'Owner',
-			phoneNumber: poster.phoneNumber,
+		const type = CONTACT_TYPES.includes(contactType) ? contactType : 'phone_request'
+		const message = typeof notes === 'string' ? notes.trim().slice(0, 1000) : ''
+		const scheduledFor = parseVisitDate(visitDate)
+		if (visitDate && (!scheduledFor || scheduledFor < new Date(Date.now() - 24 * 60 * 60 * 1000))) {
+			return res.status(400).json({ message: 'Pick a visit date from today onwards' })
 		}
 
-		const existingLead = await Lead.findOne({
-			property: propertyId,
-			buyer: buyerId,
-		})
+		// The poster's number is shared only with a logged-in buyer who has sent an enquiry
+		const contact = buildContact(property, poster)
+		const contactRequest = { type, requestedAt: new Date() }
+		const visit = scheduledFor
+			? { requestedAt: new Date(), scheduledFor, status: 'pending', notes: message || undefined }
+			: null
+
+		const existingLead = await Lead.findOne({ property: propertyId, buyer: buyerId })
 
 		if (existingLead) {
+			existingLead.contactRequests.push(contactRequest)
+			if (message) {
+				existingLead.notes = existingLead.notes
+					? `${existingLead.notes}\n---\n${message}`.slice(-3000)
+					: message
+			}
+			if (visit) {
+				existingLead.visitSchedules.push(visit)
+				existingLead.status = 'scheduled_visit'
+			} else if (['closed_lost'].includes(existingLead.status)) {
+				existingLead.status = 'new' // the buyer came back
+			}
+			await existingLead.save()
+
 			return res.status(200).json({
-				message: 'You have already contacted this property',
+				message: visit ? 'Visit request sent' : 'Your enquiry has been sent again',
 				lead: existingLead,
 				contact,
 			})
@@ -69,24 +103,49 @@ export const createLead = async (req, res, next) => {
 				[req.user.firstName, req.user.lastName].filter(Boolean).join(' ') || 'Anonymous',
 			buyerPhone: req.user.phoneNumber,
 			buyerEmail: req.user.email,
-			contactRequests: [
-				{
-					type: CONTACT_TYPES.includes(contactType) ? contactType : 'phone_request',
-					requestedAt: new Date(),
-				},
-			],
-			notes: typeof notes === 'string' ? notes.slice(0, 1000) : undefined,
+			contactRequests: [contactRequest],
+			visitSchedules: visit ? [visit] : [],
+			status: visit ? 'scheduled_visit' : 'new',
+			notes: message || undefined,
 		})
 
 		await Property.updateOne(
 			{ _id: propertyId },
 			{ $inc: { contactsMade: 1, enquiries: 1 } },
 		)
+		await User.updateOne({ _id: poster._id }, { $inc: { totalLeads: 1 } })
 
 		res.status(201).json({
-			message: 'Lead created successfully',
+			message: visit ? 'Visit request sent' : 'Your enquiry has been sent',
 			lead,
 			contact,
+		})
+	} catch (error) {
+		next(error)
+	}
+}
+
+// Has the logged-in buyer already enquired on this listing? Returns the poster's contact if so,
+// so the number stays visible after a page reload
+export const getMyLeadForProperty = async (req, res, next) => {
+	try {
+		const lead = await Lead.findOne({
+			property: req.params.propertyId,
+			buyer: req.user._id,
+		}).lean()
+
+		if (!lead) {
+			return res.status(200).json({ lead: null, contact: null })
+		}
+
+		const property = await Property.findById(req.params.propertyId).populate(
+			'postedBy',
+			'firstName lastName phoneNumber companyName role',
+		)
+
+		res.status(200).json({
+			lead,
+			contact: property?.postedBy ? buildContact(property, property.postedBy) : null,
 		})
 	} catch (error) {
 		next(error)
@@ -109,8 +168,8 @@ export const getLeads = async (req, res, next) => {
 		}
 
 		const leads = await Lead.find(filters)
-			.populate('property', 'title selectedType city locality price')
-			.populate('buyer', 'firstName lastName phoneNumber')
+			.populate('property', 'title selectedType city locality price lookingTo image')
+			.populate('buyer', 'firstName lastName phoneNumber email')
 			.skip(skip)
 			.limit(parsedLimit)
 			.sort({ createdAt: -1 })
@@ -142,11 +201,16 @@ export const getBuyerLeads = async (req, res, next) => {
 		const skip = (parsedPage - 1) * parsedLimit
 
 		const leads = await Lead.find({ buyer: buyerId })
-			.populate('property', 'title city locality price images')
-			.populate('owner', 'firstName lastName phoneNumber')
+			.populate('property', 'title selectedType city locality price lookingTo image images status dealer postedByType sourceUrl')
+			.populate('owner', 'firstName lastName phoneNumber companyName')
 			.skip(skip)
 			.limit(parsedLimit)
 			.sort({ createdAt: -1 })
+
+		// Imported test listings: hide the placeholder poster number
+		for (const lead of leads) {
+			if (lead.property?.sourceUrl && lead.owner) lead.owner.phoneNumber = undefined
+		}
 
 		const total = await Lead.countDocuments({ buyer: buyerId })
 

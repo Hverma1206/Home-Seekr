@@ -1,81 +1,115 @@
-import { motion } from 'framer-motion';
-import { MapPin, Heart, BedDouble, Maximize, ArrowUpRight, CheckCircle2 } from 'lucide-react';
-import { fadeUp } from '../animations/variants';
-import Badge from './ui/Badge';
+import { useState } from 'react';
+import { motion as Motion } from 'framer-motion';
+import { MapPin, Heart, BedDouble, Maximize, CheckCircle2, Building2 } from 'lucide-react';
 
-const PropertyCard = ({ property, onClick, isSaved, onToggleSave }) => {
-  const tags = Array.isArray(property.tags) ? property.tags : [];
+// Kept deliberately light: a short fade-in on mount, CSS-only hover (no spring, no backdrop blur over images),
+// so a grid of 20 cards stays smooth while filters change.
+const PropertyCard = ({ property, onClick, isSaved, onToggleSave, index = 0 }) => {
+  const tags = Array.isArray(property.tags) ? property.tags.slice(0, 2) : [];
+  // A dead photo URL shows the placeholder instead of the browser's broken-image icon
+  const [failedImage, setFailedImage] = useState('');
+  const showImage = property.image && failedImage !== property.image;
 
   return (
-    <motion.div 
-      variants={fadeUp}
-      whileHover={{ y: -10 }}
-      className="group cursor-pointer bg-white rounded-[2rem] p-3 shadow-xl shadow-slate-200/40 hover:shadow-2xl hover:shadow-slate-300/50 transition-all duration-500 border border-slate-100"
-      onClick={() => onClick(property)}
+    <Motion.article
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25, ease: 'easeOut', delay: Math.min(index, 8) * 0.03 }}
+      className="group cursor-pointer bg-white rounded-3xl p-2.5 border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-slate-200/60 hover:-translate-y-1 transition-[translate,box-shadow] duration-300 ease-out"
+      onClick={() => onClick?.(property)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') onClick?.(property);
+      }}
+      tabIndex={0}
+      aria-label={`${property.title}, ${property.price}${property.priceSuffix || ''}`}
     >
-      <div className="relative h-64 sm:h-72 w-full overflow-hidden rounded-[1.5rem] mb-5">
-        <img 
-          src={property.image} 
-          alt={property.title} 
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 via-transparent to-transparent opacity-80" />
-        
-        <div className="absolute top-4 left-4 flex flex-wrap gap-2">
-          {tags.map((tag, idx) => (
-            <Badge key={idx} variant={tag === 'Signature' || tag === 'Bespoke' ? 'dark' : 'light'}>
-              {tag}
-            </Badge>
-          ))}
-        </div>
-        
+      <div className="relative h-56 w-full overflow-hidden rounded-[1.25rem] mb-4 bg-slate-100">
+        {showImage ? (
+          <img
+            src={property.image}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            onError={() => setFailedImage(property.image)}
+            className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.04]"
+          />
+        ) : (
+          <div className="w-full h-full flex flex-col items-center justify-center text-slate-400">
+            <Building2 className="w-10 h-10" />
+            <span className="text-xs font-semibold mt-2">No photos yet</span>
+          </div>
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-900/70 via-slate-900/0 to-transparent" />
+
+        {tags.length > 0 && (
+          <div className="absolute top-3 left-3 right-14 flex flex-wrap gap-1.5">
+            {tags.map((tag) => (
+              <span
+                key={tag}
+                className="px-2.5 py-1 rounded-full bg-white/90 text-slate-800 text-[10px] font-bold uppercase tracking-wide"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
+
         <button
-          className={`absolute top-4 right-4 p-2.5 rounded-full backdrop-blur-md transition-colors z-10 ${
+          type="button"
+          aria-label={isSaved ? 'Remove from saved' : 'Save property'}
+          aria-pressed={Boolean(isSaved)}
+          className={`absolute top-3 right-3 p-2.5 rounded-full transition-colors duration-150 ${
             isSaved
               ? 'bg-emerald-500 text-white'
-              : 'bg-white/20 text-white hover:bg-white hover:text-emerald-500'
+              : 'bg-slate-900/40 text-white hover:bg-white hover:text-emerald-500'
           }`}
           onClick={(e) => {
             e.stopPropagation();
-            if (onToggleSave) {
-              onToggleSave(property);
-            }
+            onToggleSave?.(property);
           }}
         >
-          <Heart className="w-5 h-5" fill={isSaved ? 'currentColor' : 'none'} />
+          <Heart className="w-4 h-4" fill={isSaved ? 'currentColor' : 'none'} />
         </button>
 
-        <div className="absolute bottom-4 left-4 right-4 flex justify-between items-end">
-          <h3 className="text-2xl font-bold text-white tracking-tight">{property.price}</h3>
-          <div className="bg-white/20 backdrop-blur-md px-3 py-1 rounded-full text-white text-xs font-medium flex items-center gap-1">
-            <CheckCircle2 className="w-3 h-3" /> Verified
-          </div>
+        <div className="absolute bottom-3 left-4 right-4 flex justify-between items-end gap-2">
+          <p className="text-2xl font-black text-white tracking-tight">
+            {property.price}
+            {property.priceSuffix && <span className="text-sm font-semibold text-white/80">{property.priceSuffix}</span>}
+          </p>
+          {property.isVerified && (
+            <span className="bg-emerald-500 px-2.5 py-1 rounded-full text-white text-[11px] font-bold flex items-center gap-1">
+              <CheckCircle2 className="w-3 h-3" /> Verified
+            </span>
+          )}
         </div>
       </div>
-      
-      <div className="px-3 pb-2">
-        <h4 className="text-xl font-bold text-slate-900 mb-1 tracking-tight line-clamp-1 group-hover:text-emerald-600 transition-colors">{property.title}</h4>
-        <p className="text-slate-500 text-sm flex items-center gap-1.5 mb-5 font-medium">
-          <MapPin className="w-4 h-4 text-emerald-500" />
-          {property.location}
+
+      <div className="px-2.5 pb-1.5">
+        <h3 className="text-lg font-bold text-slate-900 tracking-tight line-clamp-1 group-hover:text-emerald-600 transition-colors duration-150">
+          {property.title}
+        </h3>
+        <p className="text-slate-500 text-sm flex items-center gap-1.5 mt-1 font-medium">
+          <MapPin className="w-4 h-4 text-emerald-500 shrink-0" />
+          <span className="line-clamp-1">{property.location}</span>
         </p>
-        
-        <div className="flex items-center gap-4 py-4 border-t border-slate-100">
-          <div className="flex items-center gap-2">
-            <div className="p-2 bg-slate-50 rounded-full"><BedDouble className="w-4 h-4 text-slate-600" /></div>
-            <span className="text-sm font-semibold text-slate-700">{property.bhk}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="p-2 bg-slate-50 rounded-full"><Maximize className="w-4 h-4 text-slate-600" /></div>
-            <span className="text-sm font-semibold text-slate-700">{property.area}</span>
-          </div>
-          
-          <div className="ml-auto w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-emerald-500 group-hover:text-white transition-colors">
-            <ArrowUpRight className="w-5 h-5" />
-          </div>
+
+        <div className="flex items-center gap-4 mt-4 pt-3 border-t border-slate-100 text-sm font-semibold text-slate-700">
+          <span className="flex items-center gap-1.5">
+            <BedDouble className="w-4 h-4 text-slate-400" />
+            {property.bhk}
+          </span>
+          {property.area && (
+            <span className="flex items-center gap-1.5">
+              <Maximize className="w-4 h-4 text-slate-400" />
+              {property.area}
+            </span>
+          )}
+          {property.dealer && (
+            <span className="ml-auto text-xs font-semibold text-slate-400 truncate max-w-[40%]">{property.dealer}</span>
+          )}
         </div>
       </div>
-    </motion.div>
+    </Motion.article>
   );
 };
 

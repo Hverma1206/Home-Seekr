@@ -154,6 +154,13 @@ const userSchema = new mongoose.Schema(
 			pushNotifications: { type: Boolean, default: true },
 			alertNotifications: { type: Boolean, default: true },
 		},
+		recentSearches: [
+			{
+				label: { type: String, default: '' },
+				filters: { type: Object, default: {} },
+				createdAt: { type: Date, default: Date.now },
+			},
+		],
 		// Stats
 		totalListings: { type: Number, default: 0 },
 		totalLeads: { type: Number, default: 0 },

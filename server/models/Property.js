@@ -36,10 +36,10 @@ const propertySchema = new mongoose.Schema(
 
     // Geolocation
     geo: {
+      // No default: a Point without coordinates is rejected by the 2dsphere index
       type: {
         type: String,
         enum: ['Point'],
-        default: 'Point',
       },
       coordinates: { type: [Number], default: undefined },
     },

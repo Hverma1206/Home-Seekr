@@ -57,7 +57,7 @@ const projectSchema = new mongoose.Schema(
 		},
 		propertyType: {
 			type: [String],
-			enum: ['apartment', 'villa', 'plot', 'builder_floor'],
+			enum: ['apartment', 'villa', 'plot', 'builder_floor', 'office', 'shop'],
 			default: ['apartment'],
 		},
 
@@ -92,7 +92,7 @@ const projectSchema = new mongoose.Schema(
 		// Configurations/Floor Plans
 		configurations: [
 			{
-				type: String, // e.g., "1 BHK", "2 BHK"
+				type: { type: String }, // e.g., "1 BHK", "2 BHK"
 				minArea: Number,
 				maxArea: Number,
 				priceMin: Number,
@@ -103,7 +103,7 @@ const projectSchema = new mongoose.Schema(
 		floorPlans: [
 			{
 				name: String,
-				type: String,
+				type: { type: String },
 				image: String,
 				area: Number,
 				price: Number,

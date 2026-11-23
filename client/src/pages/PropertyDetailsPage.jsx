@@ -60,6 +60,8 @@ const buildTrendPoints = (series, width = 280, height = 90, padding = 12) => {
   return { points, min, max, width, height, padding };
 };
 
+const POSTER_LABELS = { owner: 'Owner', broker: 'Broker', builder: 'Builder', agent: 'Agent' };
+
 const PropertyDetailsPage = ({
   property,
   onBack,
@@ -80,6 +82,7 @@ const PropertyDetailsPage = ({
   const [isLoading, setIsLoading] = useState(false);
   const [pageError, setPageError] = useState('');
   const [leadStatus, setLeadStatus] = useState({ loading: false, message: '', error: '' });
+  const [contact, setContact] = useState(null);
   const [loanAmount, setLoanAmount] = useState('');
   const [interestRate, setInterestRate] = useState(8.5);
   const [tenureYears, setTenureYears] = useState(20);
@@ -171,7 +174,7 @@ const PropertyDetailsPage = ({
     }
   }, [details?.id]);
 
-  const handleCreateLead = async (contactType = 'request_details') => {
+  const handleCreateLead = async (contactType = 'phone_request') => {
     if (!resolvedPropertyId) return;
     if (!isAuthenticated) {
       navigate('/login');
@@ -180,8 +183,9 @@ const PropertyDetailsPage = ({
 
     setLeadStatus({ loading: true, message: '', error: '' });
     try {
-      await leadService.createLead(resolvedPropertyId, { contactType });
-      setLeadStatus({ loading: false, message: 'Request sent to the owner.', error: '' });
+      const response = await leadService.createLead(resolvedPropertyId, { contactType });
+      setContact(response.contact || null);
+      setLeadStatus({ loading: false, message: 'Request sent. They will also see your number.', error: '' });
     } catch (error) {
       const message = error?.response?.data?.message || 'Unable to create lead. Try again.';
       setLeadStatus({ loading: false, message: '', error: message });
@@ -197,7 +201,7 @@ const PropertyDetailsPage = ({
   const galleryImages = Array.isArray(details.raw?.images) ? details.raw.images : [];
   const amenityList = Array.isArray(details.raw?.amenities) && details.raw.amenities.length
     ? details.raw.amenities
-    : ['24/7 Concierge', 'Valet Parking', 'Infinity Pool', 'Smart Home Tech', 'Private Lounge', 'Wellness Center'];
+    : [];
   const fallbackGallery = [
     details.image,
     'https://images.unsplash.com/photo-1600607686527-6fb886090705?auto=format&fit=crop&w=600&q=80',
@@ -328,6 +332,11 @@ const PropertyDetailsPage = ({
           {/* About Section */}
           <div className="mb-16">
             <h2 className="text-3xl font-black text-slate-900 tracking-tighter mb-6">About the property</h2>
+            {details.raw?.description ? (
+              <p className="text-lg text-slate-600 font-medium leading-relaxed whitespace-pre-line">
+                {details.raw.description}
+              </p>
+            ) : (
             <div className="prose prose-lg text-slate-600 font-medium leading-relaxed">
               <p>
                 Experience unparalleled luxury in this exquisite property located in the highly coveted heart of {details.location}. 
@@ -338,9 +347,11 @@ const PropertyDetailsPage = ({
                 Designed for those who appreciate the finer things, the property features floor-to-ceiling windows ensuring abundant natural light, a state-of-the-art chef's kitchen, and panoramic scenic views that redefine urban living.
               </p>
             </div>
+            )}
           </div>
 
           {/* Premium Amenities */}
+          {amenityList.length > 0 && (
           <div className="mb-12">
             <h2 className="text-3xl font-black text-slate-900 tracking-tighter mb-8">Premium Amenities</h2>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-8">
@@ -354,6 +365,7 @@ const PropertyDetailsPage = ({
               ))}
             </div>
           </div>
+          )}
 
           {localityInsights && (
             <div className="mb-12">
@@ -611,7 +623,7 @@ const PropertyDetailsPage = ({
                 {dealerName.charAt(0)}
               </div>
               <div>
-                <p className="text-sm font-bold text-emerald-400 uppercase tracking-wider mb-1">Exclusive Agent</p>
+                <p className="text-sm font-bold text-emerald-400 uppercase tracking-wider mb-1">{POSTER_LABELS[details.raw?.postedByType] || 'Agent'}</p>
                 <p className="text-xl font-bold">{dealerName}</p>
               </div>
             </div>
@@ -620,19 +632,29 @@ const PropertyDetailsPage = ({
               <Button
                 variant="accent"
                 className="w-full !py-4 text-lg"
-                onClick={() => handleCreateLead('schedule_visit')}
+                onClick={() => handleCreateLead('callback_request')}
                 disabled={leadStatus.loading}
               >
                 {leadStatus.loading ? 'Sending...' : 'Schedule a Tour'}
               </Button>
               <Button
                 className="w-full !py-4 bg-slate-800 hover:bg-slate-700 text-white shadow-none"
-                onClick={() => handleCreateLead('request_details')}
+                onClick={() => handleCreateLead('phone_request')}
                 disabled={leadStatus.loading}
               >
-                Contact Owner
+                Get Phone Number
               </Button>
             </div>
+
+            {contact?.phoneNumber && (
+              <a
+                href={`tel:+91${contact.phoneNumber}`}
+                className="block mt-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 px-4 py-3 text-center"
+              >
+                <span className="block text-xs text-emerald-300 font-semibold">{contact.name}</span>
+                <span className="block text-xl font-black text-white tracking-wide">+91 {contact.phoneNumber}</span>
+              </a>
+            )}
 
             {(leadStatus.message || leadStatus.error || pageError || isLoading) && (
               <p className={`text-xs text-center mt-4 font-medium ${leadStatus.error || pageError ? 'text-rose-300' : 'text-emerald-300'}`}>

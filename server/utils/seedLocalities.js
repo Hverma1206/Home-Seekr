@@ -67,10 +67,10 @@ const LOCALITIES_DATA = [
 		isPopular: true,
 		developmentStatus: 'developed',
 	},
-	// Bangalore
+	// Bengaluru
 	{
 		name: 'Indiranagar',
-		city: 'Bangalore',
+		city: 'Bengaluru',
 		state: 'Karnataka',
 		avgPricePerSqFt: 12000,
 		growthPercentage: 6.5,

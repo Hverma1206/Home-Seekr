@@ -8,6 +8,8 @@ import {
 	toggleSaveProperty,
 	getSavedProperties,
 	contactPropertyOwner,
+	getMyProperties,
+	updateProperty,
 } from '../controllers/propertyController.js'
 import { protect } from '../middleware/authMiddleware.js'
 
@@ -21,6 +23,8 @@ router.get('/details/:propertyId', getPropertyDetails)
 
 // Protected routes
 router.post('/', protect, createProperty)
+router.get('/mine', protect, getMyProperties)
+router.put('/:propertyId', protect, updateProperty)
 router.post('/:propertyId/save', protect, toggleSaveProperty)
 router.get('/saved', protect, getSavedProperties)
 router.post('/:propertyId/contact', protect, contactPropertyOwner)

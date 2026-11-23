@@ -4,6 +4,15 @@ import { Home, Menu, X, ChevronDown, LogOut, LayoutDashboard, UserCog, Heart, Li
 import Button from '../ui/Button';
 import { useAuth } from '../../hooks/useAuth';
 
+const mobileLinkClass = 'text-left px-4 py-3 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-50';
+
+const NAV_LINKS = [
+  { label: 'Buy', view: 'listings', filters: { lookingTo: 'buy', propertyCategory: 'residential' } },
+  { label: 'Rent', view: 'listings', filters: { lookingTo: 'rent', propertyCategory: 'residential' } },
+  { label: 'Commercial', view: 'listings', filters: { propertyCategory: 'commercial' } },
+  { label: 'Projects', view: 'projects' },
+];
+
 const Navbar = ({ onViewChange, currentView, onPostProperty }) => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
@@ -45,6 +54,11 @@ const Navbar = ({ onViewChange, currentView, onPostProperty }) => {
     onViewChange('login');
   };
 
+  const openLink = (item) => {
+    setMobileMenu(false);
+    onViewChange(item.view, item.filters ? { filters: item.filters } : undefined);
+  };
+
   const handleLogout = () => {
     setProfileOpen(false);
     logout({ redirectTo: '/' });
@@ -67,15 +81,10 @@ const Navbar = ({ onViewChange, currentView, onPostProperty }) => {
           {/* Desktop Links */}
           {currentView !== 'listings' && (
             <div className="hidden md:flex items-center gap-1 bg-slate-100/50 backdrop-blur-md p-1 rounded-full border border-white/20">
-              {[
-                { label: 'Buy', view: 'listings' },
-                { label: 'Rent', view: 'listings' },
-                { label: 'Commercial', view: 'listings' },
-                { label: '', view: 'projects' },
-              ].map((item) => (
+              {NAV_LINKS.map((item) => (
                 <button 
                   key={item.label} 
-                  onClick={() => onViewChange(item.view)}
+                  onClick={() => openLink(item)}
                   className={`px-5 py-2 rounded-full text-sm font-medium transition-all hover:bg-white hover:shadow-sm ${isScrolled ? 'text-slate-700' : 'text-slate-800'}`}
                 >
                   {item.label}
@@ -185,10 +194,45 @@ const Navbar = ({ onViewChange, currentView, onPostProperty }) => {
           </div>
 
           {/* Mobile Toggle */}
-          <button className="md:hidden p-2 bg-white rounded-full shadow-sm" onClick={() => setMobileMenu(!mobileMenu)}>
+          <button
+            className="md:hidden p-2 bg-white rounded-full shadow-sm"
+            aria-label="Menu"
+            aria-expanded={mobileMenu}
+            onClick={() => setMobileMenu(!mobileMenu)}
+          >
             {mobileMenu ? <X className="text-slate-900 w-5 h-5" /> : <Menu className="text-slate-900 w-5 h-5" />}
           </button>
         </div>
+
+        {mobileMenu && (
+          <div className="md:hidden mt-3 rounded-2xl bg-white shadow-2xl border border-slate-100 p-2 flex flex-col">
+            {NAV_LINKS.map((item) => (
+              <button key={item.label} onClick={() => openLink(item)} className={mobileLinkClass}>
+                {item.label}
+              </button>
+            ))}
+            {isAuthenticated ? (
+              <>
+                <button onClick={() => { setMobileMenu(false); navigate('/dashboard'); }} className={mobileLinkClass}>
+                  Dashboard
+                </button>
+                <button onClick={() => { setMobileMenu(false); navigate('/wishlist'); }} className={mobileLinkClass}>
+                  Saved Properties
+                </button>
+                <button onClick={() => { setMobileMenu(false); handleLogout(); }} className={`${mobileLinkClass} !text-red-600`}>
+                  Logout
+                </button>
+              </>
+            ) : (
+              <button onClick={() => { setMobileMenu(false); handleLoginClick(); }} className={mobileLinkClass}>
+                Login / Signup
+              </button>
+            )}
+            <Button variant="primary" className="!py-3 mt-2" onClick={() => { setMobileMenu(false); onPostProperty(); }}>
+              Post Property
+            </Button>
+          </div>
+        )}
       </div>
     </nav>
   );

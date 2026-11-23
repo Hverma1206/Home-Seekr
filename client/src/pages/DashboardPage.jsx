@@ -5,34 +5,10 @@ import { useAuth } from '../hooks/useAuth'
 import Button from '../components/ui/Button'
 import PropertyCard from '../components/PropertyCard'
 import ProjectCard from '../components/ProjectCard'
-import { propertyService } from '../services/propertyService'
+import MyListingsPanel from '../components/MyListingsPanel'
+import { propertyService, normalizeProperty } from '../services/propertyService'
 import { userService } from '../services/userService'
 import { alertService } from '../services/alertService'
-
-const normalizeFeedProperty = (property) => {
-	const areaFallback = property.plotArea
-		? `${property.plotArea}${property.plotAreaUnit ? ` ${property.plotAreaUnit}` : ''}`
-		: ''
-
-	return {
-		id: property._id || property.id,
-		title: property.title || property.selectedType || 'Property',
-		price: property.price || property.displayPrice || '',
-		bhk: property.bhk || property.bedrooms || 'N/A',
-		area: property.area || areaFallback,
-		location:
-			property.locationLabel ||
-			`${property.locality || ''}${property.city ? `, ${property.city}` : ''}`,
-		locality: property.locality || '',
-		city: property.city || '',
-		dealer: property.dealer || property.role || 'Verified Agent',
-		tags: Array.isArray(property.tags) ? property.tags : [],
-		image: property.image || (property.images && property.images[0]) || '',
-		type: property.type || property.selectedType || 'Property',
-		status: property.status || property.availabilityStatus || 'Ready',
-		raw: property,
-	}
-}
 
 const DashboardPage = () => {
 	const navigate = useNavigate()
@@ -65,7 +41,7 @@ const DashboardPage = () => {
 		.toUpperCase()
 
 	const normalizedProperties = useMemo(
-		() => feed.properties.map(normalizeFeedProperty),
+		() => feed.properties.map(normalizeProperty),
 		[feed.properties],
 	)
 
@@ -306,8 +282,8 @@ const DashboardPage = () => {
 								<p className="text-xs uppercase tracking-widest text-emerald-200 font-semibold">
 									Role
 								</p>
-								<p className="text-lg font-bold text-white mt-2">
-									{feed.role === 'builder' ? 'Builder account' : 'Buyer account'}
+								<p className="text-lg font-bold text-white mt-2 capitalize">
+									{user?.role || feed.role} account
 								</p>
 							</div>
 						</div>
@@ -390,6 +366,8 @@ const DashboardPage = () => {
 							{feedError}
 						</div>
 					)}
+
+					<MyListingsPanel />
 
 					<div className="mt-12">
 						<div className="flex items-center gap-3 mb-6">

@@ -193,6 +193,19 @@ const formatINR = (value) => {
   return `₹${formatShort(value / 1000)} K`
 }
 
+const pickResidentialIntent = (templateKey) => {
+  if (templateKey === 'villa' || templateKey === 'plot') {
+    return 'buy'
+  }
+
+  const roll = Math.random()
+  if (roll < 0.6) return 'buy'
+  if (roll < 0.9) return 'rent'
+  return 'pg'
+}
+
+const pickCommercialIntent = () => (Math.random() > 0.55 ? 'rent' : 'buy')
+
 const buildTitle = (locality, type) => {
   const prefixes = ['Skyline', 'Emerald', 'Palm', 'Grand', 'Vista', 'Harmony', 'Orchid', 'Crest']
   const suffixes = ['Residences', 'Enclave', 'Heights', 'Avenue', 'Villas', 'Studios', 'Square']
@@ -217,7 +230,9 @@ const buildPropertyForLocality = (cityInfo, locality, template, defaultPostedByI
     postedBy: defaultPostedById,  // Add required postedBy field
     title: buildTitle(locality.name, template.type),
     description: `${template.type} in ${locality.name}, ${cityInfo.city} with modern amenities and great connectivity.`,
-    lookingTo: template.propertyCategory === 'commercial' ? 'rent' : 'buy', // Changed from 'sell' to 'buy'
+    lookingTo: template.propertyCategory === 'commercial'
+      ? pickCommercialIntent()
+      : pickResidentialIntent(template.key),
     propertyCategory: template.propertyCategory,
     selectedType: template.selectedType,
     role: template.propertyCategory === 'commercial' ? 'broker' : 'owner',

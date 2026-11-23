@@ -10,9 +10,13 @@ import userRoutes from './routes/userRoutes.js'
 import userProfileRoutes from './routes/userProfileRoutes.js'
 import localityRoutes from './routes/localityRoutes.js'
 import leadRoutes from './routes/leadRoutes.js'
+import projectRoutes from './routes/projectRoutes.js'
+import alertRoutes from './routes/alertRoutes.js'
+import uploadRoutes, { UPLOAD_DIR } from './routes/uploadRoutes.js'
 import { notFound, errorHandler } from './middleware/errorMiddleware.js'
 import { seedSampleProperties } from './utils/seedSampleData.js'
 import { seedLocalities } from './utils/seedLocalities.js'
+import { seedSampleProjects } from './utils/seedSampleProjects.js'
 
 
 dotenv.config()
@@ -29,6 +33,10 @@ app.use('/api/auth', userRoutes)
 app.use('/api/user', userProfileRoutes)
 app.use('/api/locality', localityRoutes)
 app.use('/api/leads', leadRoutes)
+app.use('/api/projects', projectRoutes)
+app.use('/api/alerts', alertRoutes)
+app.use('/api/uploads', uploadRoutes)
+app.use('/uploads', express.static(UPLOAD_DIR))
 
 app.use(notFound)
 app.use(errorHandler)
@@ -57,6 +65,13 @@ const startServer = async () => {
 		console.log(`Seeded ${localitySeedResult.inserted} sample localities`)
 	} else if (localitySeedResult.error) {
 		console.error('Locality seeding error:', localitySeedResult.error)
+	}
+
+	const projectSeedResult = await seedSampleProjects()
+	if (projectSeedResult.inserted) {
+		console.log(`Seeded ${projectSeedResult.inserted} sample projects`)
+	} else if (projectSeedResult.error) {
+		console.error('Project seeding error:', projectSeedResult.error)
 	}
 
 	app.listen(PORT, () => {

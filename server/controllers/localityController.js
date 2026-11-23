@@ -142,12 +142,21 @@ export const getSimilarLocalities = async (req, res, next) => {
 // Get price trends
 export const getPriceTrends = async (req, res, next) => {
 	try {
-		const { city, localityName } = req.params
+		const localityName = req.params.localityName || req.params.locality
+		const city = req.params.city || req.query.city
 
-		const locality = await Locality.findOne({
-			city: new RegExp(`^${city}$`, 'i'),
+		if (!localityName) {
+			return res.status(400).json({ message: 'Locality name is required' })
+		}
+
+		const filters = {
 			name: new RegExp(`^${localityName}$`, 'i'),
-		})
+		}
+		if (city) {
+			filters.city = new RegExp(`^${city}$`, 'i')
+		}
+
+		const locality = await Locality.findOne(filters).sort({ searchCount: -1 })
 
 		if (!locality) {
 			return res.status(404).json({ message: 'Locality not found' })
@@ -159,6 +168,7 @@ export const getPriceTrends = async (req, res, next) => {
 			locality: locality.name,
 			city: locality.city,
 			currentAvgPrice: locality.avgPricePerSqFt,
+			priceTrend: priceHistory,
 			priceHistory,
 			growthMetrics: {
 				sixMonthGrowth: locality.sixMonthGrowth,

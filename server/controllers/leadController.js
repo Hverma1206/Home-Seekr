@@ -7,49 +7,86 @@ const parseNumber = (value) => {
 	return Number.isFinite(parsed) ? parsed : null
 }
 
+// Leads reach whoever posted the listing (stored as owner) or its associated broker
+const receivedBy = (user) =>
+	user.role === 'admin' ? {} : { $or: [{ owner: user._id }, { broker: user._id }] }
+
+const involving = (user) =>
+	user.role === 'admin'
+		? {}
+		: { $or: [{ buyer: user._id }, { owner: user._id }, { broker: user._id }] }
+
+const CONTACT_TYPES = ['phone_request', 'callback_request', 'email_inquiry']
+
 // Create a new lead (buyer contacts owner)
 export const createLead = async (req, res, next) => {
 	try {
 		const { propertyId, contactType, notes } = req.body
 		const buyerId = req.user._id
 
-		const property = await Property.findById(propertyId)
-		if (!property) {
+		const property = await Property.findById(propertyId).populate(
+			'postedBy',
+			'firstName lastName phoneNumber companyName',
+		)
+		if (!property || !property.postedBy || property.status !== 'active') {
 			return res.status(404).json({ message: 'Property not found' })
 		}
 
-		// Check if lead already exists
+		const poster = property.postedBy
+		if (poster._id.equals(buyerId)) {
+			return res.status(400).json({ message: 'This is your own listing' })
+		}
+
+		// The poster's number is shared only with a logged-in buyer who has sent an enquiry
+		const contact = {
+			name:
+				property.dealer
+				|| poster.companyName
+				|| [poster.firstName, poster.lastName].filter(Boolean).join(' ')
+				|| 'Owner',
+			phoneNumber: poster.phoneNumber,
+		}
+
 		const existingLead = await Lead.findOne({
 			property: propertyId,
 			buyer: buyerId,
 		})
 
 		if (existingLead) {
-			return res.status(400).json({ message: 'You have already contacted this property' })
+			return res.status(200).json({
+				message: 'You have already contacted this property',
+				lead: existingLead,
+				contact,
+			})
 		}
 
 		const lead = await Lead.create({
 			property: propertyId,
 			buyer: buyerId,
-			owner: property.postedBy,
+			owner: poster._id,
 			broker: property.brokerAssociated,
-			buyerName: req.user.firstName || 'Anonymous',
+			buyerName:
+				[req.user.firstName, req.user.lastName].filter(Boolean).join(' ') || 'Anonymous',
 			buyerPhone: req.user.phoneNumber,
 			buyerEmail: req.user.email,
 			contactRequests: [
 				{
-					type: contactType || 'phone_request',
+					type: CONTACT_TYPES.includes(contactType) ? contactType : 'phone_request',
 					requestedAt: new Date(),
 				},
 			],
-			notes,
+			notes: typeof notes === 'string' ? notes.slice(0, 1000) : undefined,
 		})
 
-		await Property.updateOne({ _id: propertyId }, { $inc: { contactsMade: 1 } })
+		await Property.updateOne(
+			{ _id: propertyId },
+			{ $inc: { contactsMade: 1, enquiries: 1 } },
+		)
 
 		res.status(201).json({
 			message: 'Lead created successfully',
 			lead,
+			contact,
 		})
 	} catch (error) {
 		next(error)
@@ -59,28 +96,20 @@ export const createLead = async (req, res, next) => {
 // Get leads for owner/broker/admin
 export const getLeads = async (req, res, next) => {
 	try {
-		const userId = req.user._id
-		const { role } = req.user
 		const { status, page = 1, limit = 20 } = req.query
 
 		const parsedLimit = Math.min(parseNumber(limit) || 20, 100)
 		const parsedPage = Math.max(parseNumber(page) || 1, 1)
 		const skip = (parsedPage - 1) * parsedLimit
 
-		let filters = {}
-
-		if (role === 'owner') {
-			filters.owner = userId
-		} else if (role === 'broker') {
-			filters.broker = userId
-		}
+		const filters = receivedBy(req.user)
 
 		if (status) {
 			filters.status = status
 		}
 
 		const leads = await Lead.find(filters)
-			.populate('property', 'title city locality price')
+			.populate('property', 'title selectedType city locality price')
 			.populate('buyer', 'firstName lastName phoneNumber')
 			.skip(skip)
 			.limit(parsedLimit)
@@ -140,11 +169,12 @@ export const getLeadDetails = async (req, res, next) => {
 	try {
 		const { leadId } = req.params
 
-		const lead = await Lead.findById(leadId)
+		const person = 'firstName lastName phoneNumber email companyName'
+		const lead = await Lead.findOne({ _id: leadId, ...involving(req.user) })
 			.populate('property')
-			.populate('buyer')
-			.populate('owner')
-			.populate('broker')
+			.populate('buyer', person)
+			.populate('owner', person)
+			.populate('broker', person)
 
 		if (!lead) {
 			return res.status(404).json({ message: 'Lead not found' })
@@ -178,8 +208,8 @@ export const updateLeadStatus = async (req, res, next) => {
 			return res.status(400).json({ message: 'Invalid status' })
 		}
 
-		const lead = await Lead.findByIdAndUpdate(
-			leadId,
+		const lead = await Lead.findOneAndUpdate(
+			{ _id: leadId, ...receivedBy(req.user) },
 			{
 				status,
 				lastContactedAt:
@@ -187,7 +217,7 @@ export const updateLeadStatus = async (req, res, next) => {
 						? new Date()
 						: undefined,
 			},
-			{ new: true }
+			{ returnDocument: 'after' }
 		)
 
 		if (!lead) {
@@ -213,8 +243,8 @@ export const scheduleVisit = async (req, res, next) => {
 			return res.status(400).json({ message: 'Scheduled date is required' })
 		}
 
-		const lead = await Lead.findByIdAndUpdate(
-			leadId,
+		const lead = await Lead.findOneAndUpdate(
+			{ _id: leadId, ...involving(req.user) },
 			{
 				$push: {
 					visitSchedules: {
@@ -226,7 +256,7 @@ export const scheduleVisit = async (req, res, next) => {
 				},
 				status: 'scheduled_visit',
 			},
-			{ new: true }
+			{ returnDocument: 'after' }
 		)
 
 		if (!lead) {
@@ -252,8 +282,8 @@ export const addFollowupNote = async (req, res, next) => {
 			return res.status(400).json({ message: 'Note is required' })
 		}
 
-		const lead = await Lead.findByIdAndUpdate(
-			leadId,
+		const lead = await Lead.findOneAndUpdate(
+			{ _id: leadId, ...receivedBy(req.user) },
 			{
 				$push: {
 					followupNotes: {
@@ -263,7 +293,7 @@ export const addFollowupNote = async (req, res, next) => {
 					},
 				},
 			},
-			{ new: true }
+			{ returnDocument: 'after' }
 		)
 
 		if (!lead) {
@@ -282,15 +312,8 @@ export const addFollowupNote = async (req, res, next) => {
 // Get lead analytics
 export const getLeadAnalytics = async (req, res, next) => {
 	try {
-		const userId = req.user._id
-		const { role } = req.user
 
-		let filters = {}
-		if (role === 'owner') {
-			filters.owner = userId
-		} else if (role === 'broker') {
-			filters.broker = userId
-		}
+		const filters = receivedBy(req.user)
 
 		const totalLeads = await Lead.countDocuments(filters)
 		const newLeads = await Lead.countDocuments({ ...filters, status: 'new' })
@@ -339,13 +362,13 @@ export const qualifyLead = async (req, res, next) => {
 		const { leadId } = req.params
 		const { reason } = req.body
 
-		const lead = await Lead.findByIdAndUpdate(
-			leadId,
+		const lead = await Lead.findOneAndUpdate(
+			{ _id: leadId, ...receivedBy(req.user) },
 			{
 				isQualified: true,
 				qualifiedReason: reason,
 			},
-			{ new: true }
+			{ returnDocument: 'after' }
 		)
 
 		if (!lead) {
@@ -364,15 +387,8 @@ export const qualifyLead = async (req, res, next) => {
 // Get followup reminders
 export const getFollowupReminders = async (req, res, next) => {
 	try {
-		const userId = req.user._id
-		const { role } = req.user
 
-		let filters = { nextFollowupAt: { $lte: new Date() } }
-		if (role === 'owner') {
-			filters.owner = userId
-		} else if (role === 'broker') {
-			filters.broker = userId
-		}
+		const filters = { nextFollowupAt: { $lte: new Date() }, ...receivedBy(req.user) }
 
 		const reminders = await Lead.find(filters)
 			.populate('property', 'title city')

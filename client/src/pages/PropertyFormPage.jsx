@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Check, MapPin, Home, Camera, Layers, ArrowLeft, LocateFixed, Loader2, Pencil } from 'lucide-react';
+import { Check, MapPin, Home, Camera, Layers, ArrowLeft, LocateFixed, Loader2, Pencil, X } from 'lucide-react';
 import { propertyService } from '../services/propertyService';
 import { useAuth } from '../hooks/useAuth';
 
@@ -9,7 +9,7 @@ const STEPS = [
   { id: 1, label: 'Basic Details',             icon: Home },
   { id: 2, label: 'Location Details',           icon: MapPin },
   { id: 3, label: 'Property Profile',           icon: Layers },
-  { id: 4, label: 'Photos, Videos & Voice-over',icon: Camera },
+  { id: 4, label: 'Photos & Description',       icon: Camera },
   { id: 5, label: 'Amenities section',          icon: Check },
 ];
 
@@ -35,14 +35,36 @@ const LOCATION_ADVANTAGE_OPTIONS = [
   'Close to Railway Station', 'Close to Airport', 'Close to Mall', 'Close to Highway',
 ];
 
+const MAX_PHOTOS = 10;
+
+// Downscale in the browser so phone photos (5-10 MB) upload fast and fit the server's 2 MB limit
+const toJpegBlob = async (file) => {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff'; // transparent PNGs would otherwise turn black as JPEG
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8));
+};
+
+// Saved listings store buy/rent; the form speaks sell / rent-lease
+const toFormLookingTo = (lookingTo) =>
+  lookingTo === 'buy' ? 'sell' : lookingTo === 'rent' ? 'rent / lease' : lookingTo;
+
 export default function PropertyFormPage() {
   const navigate = useNavigate();
   const { state } = useLocation();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, refreshUser } = useAuth();
+  const editing = state?.property || null; // the saved listing, when opened from "My listings"
   const initial = state || { lookingTo: 'sell', propertyCategory: 'residential', selectedType: '', role: 'owner' };
 
   const [currentStep, setCurrentStep] = useState(1);
-  const [form, setForm] = useState({
+  const [form, setForm] = useState(() => {
+    const blank = {
     lookingTo: initial.lookingTo,
     propertyCategory: initial.propertyCategory,
     selectedType: initial.selectedType,
@@ -70,7 +92,19 @@ export default function PropertyFormPage() {
     facingRoadUnit: 'Feet',
     locationAdvantages: [],
     geo: null,
+    images: [],
+    description: '',
+    };
+    if (!editing) return blank;
+
+    // Edit mode: start from the saved value of every field this form owns
+    const saved = Object.fromEntries(
+      Object.keys(blank).filter(key => editing[key] != null).map(key => [key, editing[key]]),
+    );
+    return { ...blank, ...saved, lookingTo: toFormLookingTo(editing.lookingTo) };
   });
+  const [uploading, setUploading] = useState(false);
+  const [photoError, setPhotoError] = useState('');
   const [errors, setErrors] = useState({});
   const [customInput, setCustomInput] = useState({ bedrooms: false, bathrooms: false, balconies: false });
   const [customVal, setCustomVal] = useState({ bedrooms: '', bathrooms: '', balconies: '' });
@@ -120,6 +154,29 @@ export default function PropertyFormPage() {
       },
       { timeout: 10000 }
     );
+  };
+
+  const handlePhotos = async (event) => {
+    const files = Array.from(event.target.files || []).slice(0, MAX_PHOTOS - form.images.length);
+    event.target.value = '';
+    if (!files.length) return;
+    if (!isAuthenticated) {
+      setPhotoError('Please login to upload photos.');
+      return;
+    }
+
+    setUploading(true);
+    setPhotoError('');
+    try {
+      for (const file of files) {
+        const url = await propertyService.uploadPhoto(await toJpegBlob(file));
+        setForm(f => ({ ...f, images: [...f.images, url] }));
+      }
+    } catch (error) {
+      setPhotoError(error?.response?.data?.message || 'Could not upload that photo. Try another one.');
+    } finally {
+      setUploading(false);
+    }
   };
 
   const types = form.propertyCategory === 'residential'
@@ -205,12 +262,17 @@ export default function PropertyFormPage() {
         ...form,
         lookingTo: normalizeLookingTo(),
       });
-      const result = await propertyService.createProperty(payload);
+      if (editing) {
+        await propertyService.updateProperty(editing._id, payload);
+      } else {
+        await propertyService.createProperty(payload);
+        refreshUser(); // a first listing turns the account into an owner/broker account
+      }
 
-      setSubmitSuccess('Property submitted successfully.');
+      setSubmitSuccess(editing ? 'Listing updated.' : 'Property submitted successfully.');
 
       setTimeout(() => {
-        navigate('/');
+        navigate('/dashboard');
       }, 1000);
     } catch (error) {
       const message = error?.response?.data?.message || error.message || 'Could not submit property.';
@@ -825,20 +887,52 @@ export default function PropertyFormPage() {
             {/* Step 4 — Photos */}
             {currentStep === 4 && (
               <Motion.div key="s4" variants={stepVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.22 }}>
-                <h2 className="text-2xl font-black text-slate-900 mb-0.5">Photos, Videos & Voice-over</h2>
+                <h2 className="text-2xl font-black text-slate-900 mb-0.5">Photos & Description</h2>
                 <p className="text-slate-500 text-sm mb-8">Properties with photos get 10× more enquiries.</p>
 
-                <label className="block border-2 border-dashed border-slate-200 rounded-2xl p-10 text-center mb-4 hover:border-emerald-400 transition-colors cursor-pointer">
-                  <input type="file" accept="image/*" multiple className="hidden" />
-                  <Camera className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-                  <p className="font-semibold text-slate-700 mb-1">Upload Photos</p>
-                  <p className="text-xs text-slate-400">PNG, JPG up to 10 MB each · Max 20 photos</p>
-                </label>
+                {form.images.length < MAX_PHOTOS && (
+                  <label className="block border-2 border-dashed border-slate-200 rounded-2xl p-10 text-center mb-4 hover:border-emerald-400 focus-within:border-emerald-400 transition-colors cursor-pointer">
+                    <input type="file" accept="image/*" multiple className="sr-only" onChange={handlePhotos} disabled={uploading} />
+                    {uploading
+                      ? <Loader2 className="w-10 h-10 text-emerald-500 mx-auto mb-3 animate-spin" />
+                      : <Camera className="w-10 h-10 text-slate-300 mx-auto mb-3" />}
+                    <p className="font-semibold text-slate-700 mb-1">{uploading ? 'Uploading...' : 'Upload Photos'}</p>
+                    <p className="text-xs text-slate-400">PNG or JPG · Max {MAX_PHOTOS} photos · The first photo is the cover</p>
+                  </label>
+                )}
 
-                <label className="block border-2 border-dashed border-slate-200 rounded-2xl p-8 text-center mb-8 hover:border-emerald-400 transition-colors cursor-pointer">
-                  <input type="file" accept="video/*" className="hidden" />
-                  <p className="font-semibold text-slate-700 mb-1">Upload Video <span className="text-slate-400 font-normal">(optional)</span></p>
-                  <p className="text-xs text-slate-400">MP4 up to 100 MB</p>
+                {photoError && (
+                  <p role="alert" className="text-red-500 text-xs font-semibold mb-4">{photoError}</p>
+                )}
+
+                {form.images.length > 0 && (
+                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-3 mb-8">
+                    {form.images.map((url, idx) => (
+                      <div key={url} className="relative aspect-square rounded-xl overflow-hidden border border-slate-200">
+                        <img src={url} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          aria-label={`Remove photo ${idx + 1}`}
+                          onClick={() => set('images', form.images.filter(x => x !== url))}
+                          className="absolute top-1 right-1 p-1 rounded-full bg-slate-900/70 text-white hover:bg-slate-900"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <label className="block mb-8">
+                  <span className="block text-sm font-bold text-slate-800 mb-3">What makes this property unique?</span>
+                  <textarea
+                    value={form.description}
+                    onChange={e => set('description', e.target.value)}
+                    rows={4}
+                    maxLength={2000}
+                    placeholder="Describe the property, the society and the neighbourhood"
+                    className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 placeholder-slate-400 outline-none focus:border-slate-900 transition-colors"
+                  />
                 </label>
 
                 <div className="flex gap-3">

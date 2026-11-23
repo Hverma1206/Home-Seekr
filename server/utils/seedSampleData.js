@@ -14,10 +14,10 @@ export const seedSampleProperties = async () => {
 
 		const existingCount = await Property.countDocuments()
 		
-		// Always reseed on server start in development for fresh data
+		// Seed only an empty collection: reseeding used to wipe every broker-posted listing on restart
 		if (existingCount > 0) {
-			console.log(`🔄 Clearing ${existingCount} old properties for fresh seed...`)
-			await Property.deleteMany({})
+			hasSeeded = true
+			return { inserted: 0, skipped: true }
 		}
 
 		// Create or get a default user to post properties

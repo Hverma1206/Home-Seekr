@@ -49,3 +49,9 @@ test('a real location is kept', () => {
 	const geo = { type: 'Point', coordinates: [73.78, 18.56] }
 	assert.deepEqual(prepareListingData({ geo }).geo, geo)
 })
+
+test('skipped optional fields do not break enum validation', () => {
+	const data = prepareListingData({ furnishingType: '', security: '', city: 'Pune' })
+
+	assert.deepEqual(data, { city: 'Pune' })
+})

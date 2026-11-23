@@ -1,23 +1,61 @@
 import { useState, useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { AnimatePresence, motion } from 'framer-motion';
-import { Phone, User, ArrowLeft, CheckCircle, Shield } from 'lucide-react';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { AnimatePresence, motion as Motion } from 'framer-motion';
+import { Phone, User, ArrowLeft, CheckCircle, Shield, Building2, Mail, Lock } from 'lucide-react';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
+import OTPInput from '../components/ui/OTPInput';
+import VerifyContact from '../components/VerifyContact';
 import { authService } from '../services/authService';
 import { useAuth } from '../hooks/useAuth';
+
+const RESEND_SECONDS = 30;
+
+const ROLE_OPTIONS = [
+  { value: 'buyer', label: 'Buyer / Tenant', hint: 'Looking for a property' },
+  { value: 'owner', label: 'Owner', hint: 'Selling or renting my own property' },
+  { value: 'broker', label: 'Agent / Broker', hint: 'Listing properties for clients' },
+  { value: 'builder', label: 'Builder', hint: 'Listing my projects' },
+];
+
+const needsCompany = (role) => role === 'broker' || role === 'builder';
+
+const stepMotion = {
+  initial: { opacity: 0, y: 20 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -20 },
+  transition: { duration: 0.3 },
+};
+
+const fieldClass =
+  'flex items-center gap-3 border border-slate-200 rounded-2xl px-4 py-3.5 focus-within:border-slate-900 transition-colors';
 
 const LoginSignupPage = ({ onLoginSuccess }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login } = useAuth();
-  const [step, setStep] = useState('input'); // 'input' | 'otp' | 'success'
-  const [name, setName] = useState('');
+  const { login, isAuthenticated, updateUser } = useAuth();
+  const redirectTo = location.state?.from && location.state.from !== '/login' ? location.state.from : '/';
+
+  const [step, setStep] = useState('phone'); // 'phone' | 'otp' | 'verify-email' | 'verify-phone' | 'success'
+  // TEMPORARY: email + password login alongside OTP, until the SMS provider is integrated
+  const [method, setMethod] = useState('otp'); // 'otp' | 'email'
+  const [emailMode, setEmailMode] = useState('login'); // 'login' | 'signup'
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [mobile, setMobile] = useState('');
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
+  const [otp, setOtp] = useState('');
+  const [isNewUser, setIsNewUser] = useState(false);
+  const [devMode, setDevMode] = useState(false);
+  const [name, setName] = useState('');
+  const [role, setRole] = useState('buyer');
+  const [companyName, setCompanyName] = useState('');
+  const [welcomeName, setWelcomeName] = useState('');
+  // Account just created by email signup, while its email and phone get verified
+  const [verifyUser, setVerifyUser] = useState(null);
   const [resendTimer, setResendTimer] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [info, setInfo] = useState('');
 
   useEffect(() => {
     if (resendTimer > 0) {
@@ -26,109 +64,307 @@ const LoginSignupPage = ({ onLoginSuccess }) => {
     }
   }, [resendTimer]);
 
-  const handleSendOTP = async () => {
-    if (!name.trim()) {
-      setError('Please enter your name');
+  // Someone who is already logged in has nothing to do here
+  if (isAuthenticated && !['success', 'verify-email', 'verify-phone'].includes(step)) {
+    return <Navigate to={redirectTo} replace />;
+  }
+
+  const completeLogin = ({ token, user }, fallbackName = '') => {
+    setWelcomeName(user?.firstName || fallbackName);
+    login({ token, user });
+    finish();
+  };
+
+  const finish = () => {
+    setStep('success');
+    setTimeout(() => {
+      if (onLoginSuccess) {
+        onLoginSuccess(redirectTo);
+      } else {
+        navigate(redirectTo, { replace: true });
+      }
+    }, 1200);
+  };
+
+  // Name / role / company checks shared by OTP signup and email signup
+  const validateSignupDetails = () => {
+    if (!name.trim()) return 'Please enter your name';
+    if (needsCompany(role) && !companyName.trim()) {
+      return role === 'broker' ? 'Please enter your agency / firm name' : 'Please enter your company name';
+    }
+    return '';
+  };
+
+  const buildSignupDetails = () => {
+    const [firstName, ...rest] = name.trim().split(/\s+/);
+    const details = { firstName, lastName: rest.join(' '), role };
+    if (needsCompany(role)) details.companyName = companyName.trim();
+    return details;
+  };
+
+  const handleEmailSubmit = async () => {
+    const isSignup = emailMode === 'signup';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setError('Please enter a valid email address');
       return;
     }
-    if (!/^[6-9]\d{9}$/.test(mobile)) {
-      setError('Please enter a valid 10-digit Indian mobile number');
+    if (password.length < (isSignup ? 6 : 1)) {
+      setError(isSignup ? 'Password must be at least 6 characters' : 'Please enter your password');
       return;
     }
+    if (isSignup) {
+      if (!/^[6-9]\d{9}$/.test(mobile)) {
+        setError('Please enter a valid 10-digit Indian mobile number');
+        return;
+      }
+      const detailsError = validateSignupDetails();
+      if (detailsError) {
+        setError(detailsError);
+        return;
+      }
+    }
+
     setError('');
+    setInfo('');
     setLoading(true);
     try {
-      await authService.sendOTP(mobile);
-      setStep('otp');
-      setResendTimer(30);
+      const response = isSignup
+        ? await authService.registerWithEmail({
+            email: email.trim(),
+            password,
+            phoneNumber: mobile,
+            ...buildSignupDetails(),
+          })
+        : await authService.loginWithEmail(email.trim(), password);
+      if (isSignup) {
+        // Log in first (the verify calls need the token), then verify email and phone before moving on
+        const { token, user } = response.data.data;
+        login({ token, user });
+        setWelcomeName(user?.firstName || buildSignupDetails().firstName);
+        setVerifyUser(user);
+        setStep('verify-email');
+      } else {
+        completeLogin(response.data.data);
+      }
     } catch (err) {
-      const errorMsg =
-        err.response?.data?.message || 'Failed to send OTP. Please try again.';
-      setError(errorMsg);
+      setError(err.response?.data?.message || (isSignup ? 'Failed to create account.' : 'Failed to log in.') + ' Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleOTPChange = (index, value) => {
-    if (!/^\d*$/.test(value)) return;
-    const updated = [...otp];
-    updated[index] = value.slice(-1);
-    setOtp(updated);
-    if (value && index < 5) {
-      document.getElementById(`otp-${index + 1}`)?.focus();
-    }
+  const switchMethod = (nextMethod) => {
+    setMethod(nextMethod);
+    setStep('phone');
+    setError('');
+    setInfo('');
+    setOtp('');
+    setPassword('');
   };
 
-  const handleOTPKeyDown = (index, e) => {
-    if (e.key === 'Backspace' && !otp[index] && index > 0) {
-      document.getElementById(`otp-${index - 1}`)?.focus();
+  const handleSendOTP = async () => {
+    if (!/^[6-9]\d{9}$/.test(mobile)) {
+      setError('Please enter a valid 10-digit Indian mobile number');
+      return;
+    }
+    setError('');
+    setInfo('');
+    setLoading(true);
+    try {
+      const response = await authService.sendOTP(mobile);
+      const data = response.data?.data || {};
+      setIsNewUser(Boolean(data.isNewUser));
+      setDevMode(Boolean(data.devMode));
+      setOtp('');
+      setStep('otp');
+      setResendTimer(RESEND_SECONDS);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to send OTP. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleVerifyOTP = async () => {
-    if (otp.join('').length < 6) {
+    if (otp.length < 6) {
       setError('Please enter the complete 6-digit OTP');
       return;
     }
+    if (isNewUser) {
+      const detailsError = validateSignupDetails();
+      if (detailsError) {
+        setError(detailsError);
+        return;
+      }
+    }
+
     setError('');
+    setInfo('');
     setLoading(true);
     try {
-      const response = await authService.verifyOTP({
-        phoneNumber: mobile,
-        otp: otp.join(''),
-        firstName: name.split(' ')[0],
-        lastName: name.split(' ').slice(1).join(' '),
-      });
-
-      const token = response.data.data.token;
-      const user = response.data.data.user;
-      const redirectTo = location.state?.from || '/';
-
-      login({ token, user });
-
-      setStep('success');
-      setTimeout(() => {
-        if (onLoginSuccess) {
-          onLoginSuccess(redirectTo);
-        } else {
-          navigate(redirectTo, { replace: true });
-        }
-      }, 2200);
+      const details = isNewUser ? buildSignupDetails() : {};
+      const response = await authService.verifyOTP({ phoneNumber: mobile, otp, ...details });
+      completeLogin(response.data.data, details.firstName || '');
     } catch (err) {
-      const errorMsg =
-        err.response?.data?.message || 'Failed to verify OTP. Please try again.';
-      setError(errorMsg);
-      setOtp(['', '', '', '', '', '']);
+      setError(err.response?.data?.message || 'Failed to verify OTP. Please try again.');
+      setOtp('');
     } finally {
       setLoading(false);
     }
   };
 
   const handleResendOTP = async () => {
-    if (resendTimer > 0) return;
+    if (resendTimer > 0 || loading) return;
+    setError('');
     setLoading(true);
     try {
       await authService.resendOTP(mobile);
-      setOtp(['', '', '', '', '', '']);
-      setResendTimer(30);
+      setOtp('');
+      setResendTimer(RESEND_SECONDS);
+      setInfo('A new OTP has been sent.');
     } catch (err) {
-      const errorMsg =
-        err.response?.data?.message || 'Failed to resend OTP. Please try again.';
-      setError(errorMsg);
+      setError(err.response?.data?.message || 'Failed to resend OTP. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const resetToInput = () => {
-    setStep('input');
+  const resetToPhone = () => {
+    setStep('phone');
     setError('');
-    setOtp(['', '', '', '', '', '']);
+    setInfo('');
+    setOtp('');
   };
 
+  const errorLine = error && (
+    <Motion.p
+      role="alert"
+      initial={{ opacity: 0, y: -5 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="text-red-500 text-xs font-medium -mt-2"
+    >
+      {error}
+    </Motion.p>
+  );
+
+  // Name / role / company fields, shown for a new number after OTP and on email signup
+  const signupFields = (
+    <div className="space-y-5 pt-2">
+      <div className="space-y-1.5">
+        <label htmlFor="signup-name" className="text-xs font-bold uppercase tracking-wider text-slate-500">
+          Your Name
+        </label>
+        <div className={fieldClass}>
+          <User className="w-4 h-4 text-slate-400 flex-shrink-0" />
+          <input
+            id="signup-name"
+            type="text"
+            autoComplete="name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Rahul Sharma"
+            className="flex-1 text-sm text-slate-900 placeholder-slate-400 outline-none bg-transparent"
+          />
+        </div>
+      </div>
+
+      <fieldset className="space-y-2">
+        <legend className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+          I am a
+        </legend>
+        <div className="grid grid-cols-2 gap-2">
+          {ROLE_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={role === option.value}
+              onClick={() => setRole(option.value)}
+              className={`text-left rounded-2xl border-2 px-3 py-2.5 transition-colors ${
+                role === option.value
+                  ? 'border-emerald-500 bg-emerald-50'
+                  : 'border-slate-200 hover:border-slate-400'
+              }`}
+            >
+              <span className="block text-sm font-bold text-slate-900">{option.label}</span>
+              <span className="block text-[11px] text-slate-500 leading-snug">{option.hint}</span>
+            </button>
+          ))}
+        </div>
+      </fieldset>
+
+      {needsCompany(role) && (
+        <div className="space-y-1.5">
+          <label htmlFor="signup-company" className="text-xs font-bold uppercase tracking-wider text-slate-500">
+            {role === 'broker' ? 'Agency / Firm Name' : 'Company Name'}
+          </label>
+          <div className={fieldClass}>
+            <Building2 className="w-4 h-4 text-slate-400 flex-shrink-0" />
+            <input
+              id="signup-company"
+              type="text"
+              autoComplete="organization"
+              value={companyName}
+              onChange={(e) => setCompanyName(e.target.value)}
+              placeholder={role === 'broker' ? 'e.g. Sharma Realty' : 'e.g. Prestige Group'}
+              className="flex-1 text-sm text-slate-900 placeholder-slate-400 outline-none bg-transparent"
+            />
+          </div>
+          <p className="text-[11px] text-slate-400">Buyers see this name on your listings.</p>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderMobileField = (id, autoFocus = false) => (
+    <div className="space-y-1.5">
+      <label htmlFor={id} className="text-xs font-bold uppercase tracking-wider text-slate-500">
+        Mobile Number
+      </label>
+      <div className={fieldClass}>
+        <div className="flex items-center gap-2 pr-3 border-r border-slate-200 flex-shrink-0">
+          <Phone className="w-4 h-4 text-slate-400" />
+          <span className="text-sm font-bold text-slate-900">+91</span>
+        </div>
+        <input
+          id={id}
+          type="tel"
+          inputMode="numeric"
+          autoComplete="tel-national"
+          autoFocus={autoFocus}
+          value={mobile}
+          onChange={(e) => setMobile(e.target.value.replace(/\D/g, '').slice(-10))}
+          placeholder="Enter 10-digit number"
+          className="flex-1 text-sm text-slate-900 placeholder-slate-400 outline-none bg-transparent"
+        />
+      </div>
+    </div>
+  );
+
+  const methodTabs = (
+    <div role="tablist" aria-label="Login method" className="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded-2xl">
+      {[
+        { value: 'otp', label: 'Mobile OTP', icon: <Phone className="w-4 h-4" /> },
+        { value: 'email', label: 'Email', icon: <Mail className="w-4 h-4" /> },
+      ].map(({ value, label, icon }) => (
+        <button
+          key={value}
+          type="button"
+          role="tab"
+          aria-selected={method === value}
+          onClick={() => switchMethod(value)}
+          className={`flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold transition-colors ${
+            method === value ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          {icon}
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
-    <motion.div
+    <Motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -148,28 +384,28 @@ const LoginSignupPage = ({ onLoginSuccess }) => {
         <div className="w-full max-w-5xl grid md:grid-cols-2 overflow-hidden rounded-[2.5rem] shadow-2xl shadow-slate-900/40">
 
           {/* ── Left editorial panel ── */}
-          <motion.div
+          <Motion.div
             initial={{ x: -40, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             transition={{ duration: 0.6, ease: 'easeOut' }}
             className="hidden md:flex flex-col justify-between bg-slate-900 text-white p-12"
           >
             <div className="space-y-6">
-              <Badge variant="accent">100% Secure · OTP Only</Badge>
+              <Badge variant="accent">Secure Login</Badge>
               <h2 className="text-4xl font-black tracking-tighter leading-tight">
                 Your dream home,<br />just a step away.
               </h2>
               <p className="text-slate-400 text-sm leading-relaxed">
-                Join thousands of homebuyers and investors who trust RealtyHub to
-                find premium properties across India. No passwords — ever.
+                Buyers find homes, owners and agents list their inventory and get enquiries —
+                all from one account.
               </p>
             </div>
 
             <div className="space-y-3 mt-10">
               {[
-                '100K+ Verified Listings',
-                'Zero Brokerage Deals',
-                'Instant OTP Login — No Password Needed',
+                'Browse listings from owners, agents and builders',
+                'List your property or inventory for free',
+                'Get buyer enquiries straight to your dashboard',
               ].map((feat) => (
                 <div key={feat} className="flex items-center gap-3 text-sm text-slate-300">
                   <div className="w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
@@ -180,18 +416,17 @@ const LoginSignupPage = ({ onLoginSuccess }) => {
               ))}
             </div>
 
-            {/* Security badge */}
             <div className="mt-10 flex items-center gap-3 bg-white/5 border border-white/10 rounded-2xl px-4 py-3">
               <Shield className="w-5 h-5 text-emerald-400 flex-shrink-0" />
               <p className="text-xs text-slate-400">
-                Your number is <span className="text-white font-semibold">never shared</span> with
-                third parties or property owners.
+                Your number is shared <span className="text-white font-semibold">only with the owners or agents you contact</span>,
+                never with third parties.
               </p>
             </div>
-          </motion.div>
+          </Motion.div>
 
           {/* ── Right form panel ── */}
-          <motion.div
+          <Motion.div
             initial={{ x: 40, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             transition={{ duration: 0.6, ease: 'easeOut' }}
@@ -199,84 +434,30 @@ const LoginSignupPage = ({ onLoginSuccess }) => {
           >
             <AnimatePresence mode="wait">
 
-              {/* Step 1 — Name + Mobile */}
-              {step === 'input' && (
-                <motion.div
-                  key="input"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  transition={{ duration: 0.3 }}
+              {/* Step 1 — Mobile */}
+              {step === 'phone' && method === 'otp' && (
+                <Motion.form
+                  key="phone"
+                  {...stepMotion}
                   className="space-y-6"
+                  onSubmit={(e) => { e.preventDefault(); handleSendOTP(); }}
                 >
+                  {methodTabs}
+
                   <div>
                     <h3 className="text-2xl font-black text-slate-900 tracking-tighter">
-                      Welcome to RealtyHub.
+                      Login or Sign up
                     </h3>
                     <p className="text-slate-500 text-sm mt-1">
-                      Sign in or create your account — it's the same flow.
+                      Enter your mobile number. New here? We'll set up your account after the OTP.
                     </p>
                   </div>
 
-                  {/* Name */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                      Your Name
-                    </label>
-                    <div className="flex items-center gap-3 border border-slate-200 rounded-2xl px-4 py-3.5 focus-within:border-slate-900 transition-colors">
-                      <User className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                      <input
-                        type="text"
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleSendOTP()}
-                        placeholder="e.g. Rahul Sharma"
-                        className="flex-1 text-sm text-slate-900 placeholder-slate-400 outline-none bg-transparent"
-                      />
-                    </div>
-                  </div>
+                  {renderMobileField('login-mobile', true)}
 
-                  {/* Mobile */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                      Mobile Number
-                    </label>
-                    <div className="flex items-center gap-3 border border-slate-200 rounded-2xl px-4 py-3.5 focus-within:border-slate-900 transition-colors">
-                      <div className="flex items-center gap-2 pr-3 border-r border-slate-200 flex-shrink-0">
-                        <Phone className="w-4 h-4 text-slate-400" />
-                        <span className="text-sm font-bold text-slate-900">+91</span>
-                      </div>
-                      <input
-                        type="tel"
-                        inputMode="numeric"
-                        value={mobile}
-                        onChange={(e) =>
-                          setMobile(e.target.value.replace(/\D/g, '').slice(0, 10))
-                        }
-                        onKeyDown={(e) => e.key === 'Enter' && handleSendOTP()}
-                        placeholder="Enter 10-digit number"
-                        maxLength={10}
-                        className="flex-1 text-sm text-slate-900 placeholder-slate-400 outline-none bg-transparent"
-                      />
-                    </div>
-                  </div>
+                  {errorLine}
 
-                  {error && (
-                    <motion.p
-                      initial={{ opacity: 0, y: -5 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="text-red-500 text-xs font-medium -mt-2"
-                    >
-                      {error}
-                    </motion.p>
-                  )}
-
-                  <Button
-                    variant="primary"
-                    className="w-full !py-4"
-                    onClick={handleSendOTP}
-                    disabled={loading}
-                  >
+                  <Button type="submit" variant="primary" className="w-full !py-4" disabled={loading}>
                     {loading ? 'Sending OTP…' : 'Send OTP →'}
                   </Button>
 
@@ -286,21 +467,112 @@ const LoginSignupPage = ({ onLoginSuccess }) => {
                     {' '}&amp;{' '}
                     <span className="text-slate-900 font-semibold underline cursor-pointer">Privacy Policy</span>
                   </p>
-                </motion.div>
+                </Motion.form>
               )}
 
-              {/* Step 2 — OTP */}
-              {step === 'otp' && (
-                <motion.div
-                  key="otp"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  transition={{ duration: 0.3 }}
+              {/* TEMPORARY: Email + password (login or signup) */}
+              {step === 'phone' && method === 'email' && (
+                <Motion.form
+                  key={`email-${emailMode}`}
+                  {...stepMotion}
                   className="space-y-6"
+                  onSubmit={(e) => { e.preventDefault(); handleEmailSubmit(); }}
+                >
+                  {methodTabs}
+
+                  <div>
+                    <h3 className="text-2xl font-black text-slate-900 tracking-tighter">
+                      {emailMode === 'signup' ? 'Create your account.' : 'Welcome back.'}
+                    </h3>
+                    <p className="text-slate-500 text-sm mt-1">
+                      {emailMode === 'signup'
+                        ? 'Sign up with your email and a password.'
+                        : 'Log in with your email and password.'}
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label htmlFor="login-email" className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                      Email
+                    </label>
+                    <div className={fieldClass}>
+                      <Mail className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                      <input
+                        id="login-email"
+                        type="email"
+                        autoComplete="email"
+                        autoFocus
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="you@example.com"
+                        className="flex-1 text-sm text-slate-900 placeholder-slate-400 outline-none bg-transparent"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label htmlFor="login-password" className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                      Password
+                    </label>
+                    <div className={fieldClass}>
+                      <Lock className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                      <input
+                        id="login-password"
+                        type="password"
+                        autoComplete={emailMode === 'signup' ? 'new-password' : 'current-password'}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder={emailMode === 'signup' ? 'At least 6 characters' : 'Your password'}
+                        className="flex-1 text-sm text-slate-900 placeholder-slate-400 outline-none bg-transparent"
+                      />
+                    </div>
+                  </div>
+
+                  {emailMode === 'signup' && (
+                    <>
+                      <div className="space-y-1">
+                        {renderMobileField('signup-mobile')}
+                        <p className="text-[11px] text-slate-400">Shared only with the owners or agents you contact.</p>
+                      </div>
+                      {signupFields}
+                    </>
+                  )}
+
+                  {errorLine}
+
+                  <Button type="submit" variant="primary" className="w-full !py-4" disabled={loading}>
+                    {loading
+                      ? emailMode === 'signup' ? 'Creating account…' : 'Logging in…'
+                      : emailMode === 'signup' ? 'Create Account →' : 'Login →'}
+                  </Button>
+
+                  <p className="text-center text-sm text-slate-500">
+                    {emailMode === 'signup' ? 'Already have an account?' : 'New here?'}{' '}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEmailMode(emailMode === 'signup' ? 'login' : 'signup');
+                        setError('');
+                      }}
+                      className="text-emerald-600 font-semibold hover:underline"
+                    >
+                      {emailMode === 'signup' ? 'Log in' : 'Create an account'}
+                    </button>
+                  </p>
+                </Motion.form>
+              )}
+
+              {/* Step 2 — OTP (+ signup details for a new number) */}
+              {step === 'otp' && (
+                <Motion.form
+                  key="otp"
+                  {...stepMotion}
+                  className="space-y-6"
+                  onSubmit={(e) => { e.preventDefault(); handleVerifyOTP(); }}
                 >
                   <button
-                    onClick={resetToInput}
+                    type="button"
+                    onClick={resetToPhone}
                     className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-900 transition-colors"
                   >
                     <ArrowLeft className="w-4 h-4" />
@@ -309,48 +581,27 @@ const LoginSignupPage = ({ onLoginSuccess }) => {
 
                   <div>
                     <h3 className="text-2xl font-black text-slate-900 tracking-tighter">
-                      Verify your number.
+                      {isNewUser ? 'Create your account.' : 'Welcome back.'}
                     </h3>
                     <p className="text-slate-500 text-sm mt-1">
-                      OTP sent to{' '}
-                      <span className="font-semibold text-slate-900">+91 {mobile}</span>
+                      OTP sent to <span className="font-semibold text-slate-900">+91 {mobile}</span>
                     </p>
+                    {devMode && (
+                      <p className="text-xs text-amber-600 font-medium mt-2">
+                        Dev mode: no SMS key configured, the OTP is printed in the server console.
+                      </p>
+                    )}
                   </div>
 
-                  {/* OTP boxes */}
-                  <div className="flex gap-2 sm:gap-3 justify-between">
-                    {otp.map((digit, i) => (
-                      <input
-                        key={i}
-                        id={`otp-${i}`}
-                        type="text"
-                        inputMode="numeric"
-                        value={digit}
-                        onChange={(e) => handleOTPChange(i, e.target.value)}
-                        onKeyDown={(e) => handleOTPKeyDown(i, e)}
-                        maxLength={1}
-                        className="w-11 h-14 sm:w-12 sm:h-14 text-center text-xl font-black text-slate-900 border-2 border-slate-200 rounded-2xl focus:border-slate-900 outline-none transition-colors"
-                      />
-                    ))}
-                  </div>
+                  <OTPInput value={otp} onChange={setOtp} length={6} disabled={loading} autoFocus />
 
-                  {error && (
-                    <motion.p
-                      initial={{ opacity: 0, y: -5 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="text-red-500 text-xs font-medium -mt-2"
-                    >
-                      {error}
-                    </motion.p>
-                  )}
+                  {isNewUser && signupFields}
 
-                  <Button
-                    variant="primary"
-                    className="w-full !py-4"
-                    onClick={handleVerifyOTP}
-                    disabled={loading}
-                  >
-                    {loading ? 'Verifying…' : 'Verify & Continue →'}
+                  {errorLine}
+                  {info && !error && <p className="text-emerald-600 text-xs font-medium -mt-2">{info}</p>}
+
+                  <Button type="submit" variant="primary" className="w-full !py-4" disabled={loading}>
+                    {loading ? 'Verifying…' : isNewUser ? 'Verify & Create Account →' : 'Verify & Login →'}
                   </Button>
 
                   <p className="text-center text-sm text-slate-500">
@@ -359,48 +610,97 @@ const LoginSignupPage = ({ onLoginSuccess }) => {
                       <span className="text-slate-400">Resend in {resendTimer}s</span>
                     ) : (
                       <button
+                        type="button"
                         onClick={handleResendOTP}
+                        disabled={loading}
                         className="text-emerald-600 font-semibold hover:underline"
                       >
                         Resend OTP
                       </button>
                     )}
                   </p>
-                </motion.div>
+                </Motion.form>
+              )}
+
+              {/* After email signup — verify email, then phone */}
+              {(step === 'verify-email' || step === 'verify-phone') && verifyUser && (
+                <Motion.div key={step} {...stepMotion} className="space-y-5">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-emerald-600">
+                      Step {step === 'verify-email' ? 1 : 2} of 2
+                    </p>
+                    <h3 className="text-2xl font-black text-slate-900 tracking-tighter mt-1">
+                      {step === 'verify-email' ? 'Confirm your email.' : 'Confirm your phone.'}
+                    </h3>
+                    <p className="text-slate-500 text-sm mt-1">
+                      {step === 'verify-email'
+                        ? 'Your account is ready. Verify your email so we can reach you about your account.'
+                        : 'A verified number is needed to post a property or contact owners. You can also do this later from your profile.'}
+                    </p>
+                  </div>
+
+                  {step === 'verify-email' ? (
+                    <VerifyContact
+                      key="email"
+                      channel="email"
+                      target={verifyUser.email}
+                      autoSend
+                      onVerified={(user) => {
+                        updateUser(user);
+                        setVerifyUser(user);
+                        setTimeout(() => setStep('verify-phone'), 700);
+                      }}
+                      onSkip={() => setStep('verify-phone')}
+                    />
+                  ) : (
+                    <VerifyContact
+                      key="phone"
+                      channel="phone"
+                      target={verifyUser.pendingPhoneNumber || verifyUser.phoneNumber}
+                      autoSend
+                      allowChangeNumber
+                      onVerified={(user) => {
+                        updateUser(user);
+                        setTimeout(finish, 700);
+                      }}
+                      onSkip={finish}
+                    />
+                  )}
+                </Motion.div>
               )}
 
               {/* Step 3 — Success */}
               {step === 'success' && (
-                <motion.div
+                <Motion.div
                   key="success"
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ duration: 0.4 }}
                   className="text-center space-y-5 py-10"
                 >
-                  <motion.div
+                  <Motion.div
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
                     transition={{ type: 'spring', stiffness: 200, damping: 14, delay: 0.1 }}
                     className="w-20 h-20 rounded-full bg-emerald-50 flex items-center justify-center mx-auto"
                   >
                     <CheckCircle className="w-10 h-10 text-emerald-500" />
-                  </motion.div>
+                  </Motion.div>
 
                   <div>
                     <h3 className="text-2xl font-black text-slate-900 tracking-tighter">
-                      You're in, {name.split(' ')[0]}!
+                      You're in{welcomeName ? `, ${welcomeName}` : ''}!
                     </h3>
-                    <p className="text-slate-500 text-sm mt-1">Redirecting you to the homepage…</p>
+                    <p className="text-slate-500 text-sm mt-1">Taking you back…</p>
                   </div>
-                </motion.div>
+                </Motion.div>
               )}
 
             </AnimatePresence>
-          </motion.div>
+          </Motion.div>
         </div>
       </div>
-    </motion.div>
+    </Motion.div>
   );
 };
 

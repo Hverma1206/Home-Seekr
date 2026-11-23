@@ -1,7 +1,6 @@
 import Property from '../models/Property.js'
 import Locality from '../models/Locality.js'
 import Wishlist from '../models/Wishlist.js'
-import Lead from '../models/Lead.js'
 import Review from '../models/Review.js'
 import User from '../models/User.js'
 
@@ -116,7 +115,9 @@ const buildFilters = (query) => {
 		filters.selectedType = new RegExp(escapeRegExp(query.selectedType), 'i')
 	}
 	if (query.bhk || query.bhkNumeric) {
-		filters.bhkNumeric = parseNumber(query.bhk || query.bhkNumeric)
+		const bhk = parseNumber(query.bhk || query.bhkNumeric)
+		// The largest option in the filter is "4+ BHK"
+		filters.bhkNumeric = bhk >= 4 ? { $gte: 4 } : bhk
 	}
 
 	// Price filters
@@ -173,7 +174,7 @@ const PROTECTED_FIELDS = [
 	'isVerified', 'verificationNotes', 'documentVerified', 'titleClear',
 	'isFeatured', 'isHighlight', 'isPromoted', 'lastBoostedAt', 'boostCount', 'renewedAt',
 	'views', 'enquiries', 'contactsMade', 'savedCount', 'averageRating', 'reviewCount',
-	'createdAt', 'updatedAt',
+	'createdAt', 'updatedAt', 'sourceName', 'sourceUrl',
 ]
 
 const OWNER_STATUSES = ['active', 'sold', 'rented', 'inactive']
@@ -220,6 +221,9 @@ export const prepareListingData = (body = {}) => {
 	if (!data.title && data.selectedType && data.locality) {
 		data.title = `${data.bhk ? `${data.bhk} ` : ''}${data.selectedType} in ${data.locality}`
 	}
+	// Optional enum fields arrive as '' when the poster skipped them; let the schema default apply instead
+	if (data.furnishingType === '' || data.furnishingType === null) delete data.furnishingType
+	if (data.security === '' || data.security === null) delete data.security
 	if (Array.isArray(data.images)) {
 		data.images = data.images.filter((url) => typeof url === 'string' && url).slice(0, 20)
 		data.image = data.images[0] || ''
@@ -290,6 +294,25 @@ export const updateProperty = async (req, res, next) => {
 		}
 
 		res.status(200).json({ message: 'Listing updated', property })
+	} catch (error) {
+		next(error)
+	}
+}
+
+// Remove a listing for good; only the poster can. Its saved entries go with it, enquiries are kept for the poster's records
+export const deleteProperty = async (req, res, next) => {
+	try {
+		const property = await Property.findOneAndDelete({
+			_id: req.params.propertyId,
+			postedBy: req.user._id,
+		})
+
+		if (!property) {
+			return res.status(404).json({ message: 'Listing not found' })
+		}
+
+		await Wishlist.deleteMany({ property: property._id })
+		res.status(200).json({ message: 'Listing deleted' })
 	} catch (error) {
 		next(error)
 	}
@@ -384,9 +407,10 @@ export const getProperties = async (req, res, next) => {
 // Get properties by city (for location-aware dashboard)
 export const getPropertiesByCity = async (req, res, next) => {
 	try {
-		const { city, limit = 50, lookingTo } = req.query
+		const { city } = req.params
+		const { limit = 50, lookingTo } = req.query
 
-		const filters = { status: 'active', city: new RegExp(`^${city}$`, 'i') }
+		const filters = { status: 'active', city: new RegExp(`^${escapeRegExp(String(city))}$`, 'i') }
 		if (lookingTo) filters.lookingTo = lookingTo
 
 		const properties = await Property.find(filters)
@@ -412,7 +436,7 @@ export const getTrendingProperties = async (req, res, next) => {
 		const { city, limit = 10 } = req.query
 
 		const filters = { status: 'active' }
-		if (city) filters.city = new RegExp(`^${city}$`, 'i')
+		if (city) filters.city = new RegExp(`^${escapeRegExp(String(city))}$`, 'i')
 
 		const trendingProperties = await Property.find(filters)
 			.sort({ views: -1, savedCount: -1 })
@@ -569,51 +593,6 @@ export const getSavedProperties = async (req, res, next) => {
 				limit: parsedLimit,
 				pages: Math.ceil(total / parsedLimit),
 			},
-		})
-	} catch (error) {
-		next(error)
-	}
-}
-
-// Contact property owner (create lead)
-export const contactPropertyOwner = async (req, res, next) => {
-	try {
-		const { propertyId } = req.params
-		const { message, contactType } = req.body
-		const buyerId = req.user._id
-
-		const property = await Property.findById(propertyId)
-		if (!property) {
-			return res.status(404).json({ message: 'Property not found' })
-		}
-
-		// Create lead
-		const lead = await Lead.create({
-			property: propertyId,
-			buyer: buyerId,
-			owner: property.postedBy,
-			broker: property.brokerAssociated,
-			buyerName: req.user.firstName,
-			buyerPhone: req.user.phoneNumber,
-			buyerEmail: req.user.email,
-			contactRequests: [
-				{
-					type: contactType || 'phone_request',
-					requestedAt: new Date(),
-				},
-			],
-			notes: message,
-		})
-
-		// Update property contact count
-		await Property.updateOne(
-			{ _id: propertyId },
-			{ $inc: { contactsMade: 1 } }
-		)
-
-		res.status(201).json({
-			message: 'Your inquiry has been sent to the owner',
-			lead,
 		})
 	} catch (error) {
 		next(error)

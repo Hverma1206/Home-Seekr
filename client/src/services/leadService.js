@@ -15,7 +15,7 @@ export const leadService = {
     
     return {
       leads: data.leads || [],
-      total: data.total || 0,
+      total: data.meta?.total || 0,
     }
   },
 
@@ -25,8 +25,14 @@ export const leadService = {
     
     return {
       leads: data.leads || [],
-      total: data.total || 0,
+      total: data.meta?.total || 0,
     }
+  },
+
+  // { lead, contact } when the logged-in buyer already enquired on this listing, else nulls
+  async getMyLeadForProperty(propertyId) {
+    const response = await apiClient.get(`/leads/property/${propertyId}`)
+    return response.data || { lead: null, contact: null }
   },
 
   async getLeadDetails(leadId) {
@@ -60,7 +66,7 @@ export const leadService = {
     
     return {
       reminders: data.reminders || [],
-      total: data.total || 0,
+      total: data.count || 0,
     }
   },
 

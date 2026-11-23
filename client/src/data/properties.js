@@ -34,7 +34,7 @@ export const MOCK_PROPERTIES = [
     location: "Sector 102, Gurugram",
     dealer: "Urban Spaces",
     tags: ["High ROI"],
-    image: "https://images.unsplash.com/photo-1600607687931-cebf0746e426?auto=format&fit=crop&w=1200&q=80",
+    image: "https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=1200&q=80",
     type: "Studio",
     status: "Ready"
   },

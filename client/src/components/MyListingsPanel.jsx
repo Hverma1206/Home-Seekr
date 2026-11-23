@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Building2, Eye, MessageSquare, Pencil, Phone, Plus } from 'lucide-react'
+import { Building2, CalendarDays, Eye, Mail, MessageSquare, Pencil, Phone, Plus, Trash2 } from 'lucide-react'
 import Button from './ui/Button'
 import { propertyService } from '../services/propertyService'
 import { leadService } from '../services/leadService'
@@ -62,6 +62,19 @@ const MyListingsPanel = () => {
 		}
 	}
 
+	const deleteListing = async (listing) => {
+		if (!window.confirm(`Delete "${listing.title}"? This cannot be undone. Mark it sold/rented/inactive instead to keep it in your records.`)) {
+			return
+		}
+		setError('')
+		try {
+			await propertyService.deleteProperty(listing.id)
+			setListings((prev) => prev.filter((item) => item.id !== listing.id))
+		} catch (err) {
+			setError(err.response?.data?.message || 'Unable to delete the listing')
+		}
+	}
+
 	const changeLeadStatus = async (lead, status) => {
 		setError('')
 		try {
@@ -118,7 +131,7 @@ const MyListingsPanel = () => {
 							<div className="flex-1 min-w-0">
 								<p className="font-bold text-slate-900 truncate">{listing.title}</p>
 								<p className="text-sm text-slate-500 truncate">{listing.location}</p>
-								<p className="text-sm font-semibold text-slate-700 mt-1">{listing.price}</p>
+								<p className="text-sm font-semibold text-slate-700 mt-1">{listing.price}{listing.priceSuffix}</p>
 								<p className="flex items-center gap-4 text-xs text-slate-500 mt-2">
 									<span className="flex items-center gap-1">
 										<Eye className="w-3.5 h-3.5" /> {listing.raw.views || 0} views
@@ -159,6 +172,14 @@ const MyListingsPanel = () => {
 								>
 									View
 								</Button>
+								<button
+									type="button"
+									aria-label={`Delete ${listing.title}`}
+									onClick={() => deleteListing(listing)}
+									className="p-2.5 rounded-full border border-slate-200 text-slate-500 hover:text-red-600 hover:border-red-300 transition-colors"
+								>
+									<Trash2 className="w-4 h-4" />
+								</button>
 							</div>
 						</li>
 					))}
@@ -169,6 +190,12 @@ const MyListingsPanel = () => {
 				</p>
 			)}
 
+			{!loading && listings.length > 0 && leads.length === 0 && (
+				<p className="mt-8 text-sm text-slate-500">
+					No enquiries yet. Listings with photos and a clear description get far more responses.
+				</p>
+			)}
+
 			{leads.length > 0 && (
 				<div className="mt-10">
 					<div className="flex items-center gap-3 mb-6">
@@ -176,19 +203,33 @@ const MyListingsPanel = () => {
 						<h3 className="text-xl font-black text-slate-900">Enquiries received</h3>
 					</div>
 					<ul className="space-y-3">
-						{leads.map((lead) => (
+						{leads.map((lead) => {
+							const visit = [...(lead.visitSchedules || [])].reverse().find((v) => v.status !== 'cancelled')
+							return (
 							<li
 								key={lead._id}
-								className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 bg-white border border-slate-100 rounded-2xl p-4"
+								className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 bg-white border border-slate-100 rounded-2xl p-4"
 							>
-								<div className="min-w-0">
-									<p className="font-semibold text-slate-800">{lead.buyerName || 'Buyer'}</p>
+								<div className="min-w-0 flex-1">
+									<p className="font-semibold text-slate-800">
+										{lead.buyerName || 'Buyer'}
+										{lead.status === 'new' && <span className="ml-2 text-[10px] uppercase tracking-wider font-bold text-white bg-emerald-500 rounded-full px-2 py-0.5">New</span>}
+									</p>
 									<p className="text-xs text-slate-500 mt-1 truncate">
 										{lead.property?.title || lead.property?.selectedType || 'Listing'}
 										{lead.property?.locality ? ` · ${lead.property.locality}` : ''}
 										{' · '}
 										{new Date(lead.createdAt).toLocaleDateString('en-IN')}
 									</p>
+									{visit?.scheduledFor && (
+										<p className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 mt-2">
+											<CalendarDays className="w-3.5 h-3.5" />
+											Wants to visit on {new Date(visit.scheduledFor).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}
+										</p>
+									)}
+									{lead.notes && (
+										<p className="text-sm text-slate-600 mt-2 whitespace-pre-line bg-slate-50 rounded-xl px-3 py-2">{lead.notes}</p>
+									)}
 								</div>
 								<div className="flex flex-wrap items-center gap-3">
 									{lead.buyerPhone && (
@@ -197,6 +238,14 @@ const MyListingsPanel = () => {
 											className="flex items-center gap-2 text-sm font-bold text-emerald-700 hover:underline"
 										>
 											<Phone className="w-4 h-4" /> +91 {lead.buyerPhone}
+										</a>
+									)}
+									{lead.buyerEmail && (
+										<a
+											href={`mailto:${lead.buyerEmail}`}
+											className="flex items-center gap-2 text-sm font-semibold text-slate-600 hover:underline"
+										>
+											<Mail className="w-4 h-4" /> Email
 										</a>
 									)}
 									<select
@@ -211,7 +260,8 @@ const MyListingsPanel = () => {
 									</select>
 								</div>
 							</li>
-						))}
+							)
+						})}
 					</ul>
 				</div>
 			)}

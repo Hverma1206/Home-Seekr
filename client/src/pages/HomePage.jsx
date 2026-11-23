@@ -128,7 +128,7 @@ const HomePage = ({
             {/* Stacked Cards */}
             <div className="flex flex-col gap-6 h-full">
               <div className="flex-1 relative rounded-[2.5rem] overflow-hidden group cursor-pointer min-h-[250px]" onClick={() => onViewChange('listings')}>
-                <img src="https://images.unsplash.com/photo-1600607687931-cebf0746e426?auto=format&fit=crop&w=800&q=80" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt="Apartments" />
+                <img src="https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=800&q=80" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt="Apartments" />
                 <div className="absolute inset-0 bg-slate-900/30 group-hover:bg-slate-900/20 transition-colors" />
                 <div className="absolute bottom-6 left-6">
                   <Badge variant="light" className="mb-2">4.5k+ Properties</Badge>

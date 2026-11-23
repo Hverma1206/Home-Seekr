@@ -7,11 +7,11 @@ import {
 	getPropertyDetails,
 	toggleSaveProperty,
 	getSavedProperties,
-	contactPropertyOwner,
 	getMyProperties,
 	updateProperty,
+	deleteProperty,
 } from '../controllers/propertyController.js'
-import { protect } from '../middleware/authMiddleware.js'
+import { protect, requireVerifiedPhone } from '../middleware/authMiddleware.js'
 
 const router = express.Router()
 
@@ -22,11 +22,11 @@ router.get('/city/:city', getPropertiesByCity)
 router.get('/details/:propertyId', getPropertyDetails)
 
 // Protected routes
-router.post('/', protect, createProperty)
+router.post('/', protect, requireVerifiedPhone, createProperty)
 router.get('/mine', protect, getMyProperties)
 router.put('/:propertyId', protect, updateProperty)
+router.delete('/:propertyId', protect, deleteProperty)
 router.post('/:propertyId/save', protect, toggleSaveProperty)
 router.get('/saved', protect, getSavedProperties)
-router.post('/:propertyId/contact', protect, contactPropertyOwner)
 
 export default router

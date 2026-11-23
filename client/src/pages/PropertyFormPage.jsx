@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Check, MapPin, Home, Camera, Layers, ArrowLeft, LocateFixed, Loader2, Pencil, X } from 'lucide-react';
-import { propertyService } from '../services/propertyService';
+import { propertyService, formatPrice } from '../services/propertyService';
 import { useAuth } from '../hooks/useAuth';
+import VerifyContact from '../components/VerifyContact';
 
 const STEPS = [
   { id: 1, label: 'Basic Details',             icon: Home },
@@ -37,6 +38,17 @@ const LOCATION_ADVANTAGE_OPTIONS = [
 
 const MAX_PHOTOS = 10;
 
+const PLOT_TYPES = ['Plot / Land', 'Agriculture Land'];
+const FURNISHING_OPTIONS = [
+  ['unfurnished', 'Unfurnished'],
+  ['semi-furnished', 'Semi-furnished'],
+  ['fully-furnished', 'Fully furnished'],
+];
+
+// Fields that only make sense for one kind of property; cleared on submit so a switched type leaves no stale data
+const PLOT_ONLY_FIELDS = ['plotLength', 'plotBreadth', 'floorsAllowed', 'hasBoundaryWall', 'openSides', 'anyConstructionDone'];
+const BUILT_ONLY_FIELDS = ['bedrooms', 'bathrooms', 'balconies', 'floor', 'totalFloors', 'furnishingType', 'availabilityStatus', 'propertyAge'];
+
 // Downscale in the browser so phone photos (5-10 MB) upload fast and fit the server's 2 MB limit
 const toJpegBlob = async (file) => {
   const bitmap = await createImageBitmap(file);
@@ -58,8 +70,10 @@ const toFormLookingTo = (lookingTo) =>
 export default function PropertyFormPage() {
   const navigate = useNavigate();
   const { state } = useLocation();
-  const { isAuthenticated, refreshUser } = useAuth();
+  const { isAuthenticated, refreshUser, updateUser, user } = useAuth();
   const editing = state?.property || null; // the saved listing, when opened from "My listings"
+  // New listings need a verified phone (the server refuses them otherwise), so ask before the form is filled in
+  const needsPhoneVerification = isAuthenticated && !editing && !(user?.isPhoneVerified && user?.phoneNumber);
   const initial = state || { lookingTo: 'sell', propertyCategory: 'residential', selectedType: '', role: 'owner' };
 
   const [currentStep, setCurrentStep] = useState(1);
@@ -81,6 +95,7 @@ export default function PropertyFormPage() {
     bedrooms: '', bathrooms: '', balconies: '',
     floor: '', totalFloors: '',
     availabilityStatus: '', ownership: '',
+    furnishingType: '', security: '',
     approvedBy: [],
     propertyAge: '',
     amenities: [],
@@ -183,6 +198,11 @@ export default function PropertyFormPage() {
     ? PROPERTY_TYPES_RESIDENTIAL
     : PROPERTY_TYPES_COMMERCIAL;
 
+  const isPlot = PLOT_TYPES.includes(form.selectedType);
+  const isRental = form.lookingTo === 'rent / lease' || form.lookingTo === 'pg';
+  const isPG = form.lookingTo === 'pg';
+  const hasRooms = form.propertyCategory === 'residential' && !isPlot && !isPG;
+
   const propertyScore = Math.min(Math.round(((currentStep - 1) / 5) * 100), 100);
 
   const set = (key, value) => setForm(f => ({ ...f, [key]: value }));
@@ -209,10 +229,14 @@ export default function PropertyFormPage() {
       if (!form.state.trim()) e.state = 'Required';
       if (!form.locality.trim()) e.locality = 'Required';
       if (!form.pincode.trim()) e.pincode = 'Required';
+      else if (!/^[1-9]\d{5}$/.test(form.pincode.trim())) e.pincode = 'Enter a valid 6-digit PIN code';
     }
     if (currentStep === 3) {
-      if (!form.plotArea.trim()) e.plotArea = 'Plot area is required.';
-      if (!form.price.trim()) e.price = 'Expected price is required.';
+      if (!String(form.plotArea).trim() || Number(form.plotArea) <= 0) e.plotArea = 'Area is required.';
+      if (!String(form.price).trim() || Number(form.price) <= 0) {
+        e.price = isRental ? 'Monthly rent is required.' : 'Expected price is required.';
+      }
+      if (hasRooms && !form.bedrooms) e.bedrooms = 'Select the number of bedrooms.';
     }
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -258,9 +282,15 @@ export default function PropertyFormPage() {
     setSubmitSuccess('');
 
     try {
+      const cleared = Object.fromEntries(
+        (isPlot ? BUILT_ONLY_FIELDS : PLOT_ONLY_FIELDS).map((key) => [key, '']),
+      );
       const payload = sanitizePayload({
         ...form,
+        ...cleared,
+        ...(isRental ? {} : { security: '' }),
         lookingTo: normalizeLookingTo(),
+        priceInWords: formatPrice(form.price),
       });
       if (editing) {
         await propertyService.updateProperty(editing._id, payload);
@@ -306,6 +336,28 @@ export default function PropertyFormPage() {
           <span className="font-black text-slate-900 text-lg tracking-tighter">RealtyHub.</span>
         </div>
       </div>
+
+      {needsPhoneVerification && (
+        <div className="max-w-6xl mx-auto px-4 pt-8">
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:p-5 grid gap-4 md:grid-cols-[1fr_minmax(0,26rem)] md:items-start">
+            <div>
+              <p className="font-bold text-amber-900">Verify your phone number to publish</p>
+              <p className="text-sm text-amber-800 mt-1">
+                Buyers and tenants will call you on it. You can keep filling in the form; your details stay here while you verify.
+              </p>
+            </div>
+            <VerifyContact
+              channel="phone"
+              target={user?.pendingPhoneNumber || ''}
+              allowChangeNumber
+              onVerified={(nextUser) => {
+                updateUser(nextUser);
+                setSubmitError('');
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="max-w-6xl mx-auto px-4 py-10 grid grid-cols-1 md:grid-cols-[260px_1fr_220px] gap-6">
 
@@ -375,7 +427,9 @@ export default function PropertyFormPage() {
             {/* Step 1 — Basic Details */}
             {currentStep === 1 && (
               <Motion.div key="s1" variants={stepVariants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.22 }}>
-                <h2 className="text-2xl font-black text-slate-900 mb-0.5">Welcome back,</h2>
+                <h2 className="text-2xl font-black text-slate-900 mb-0.5">
+                  {editing ? 'Edit your listing' : `Welcome${user?.firstName ? `, ${user.firstName}` : ''}`}
+                </h2>
                 <p className="text-slate-500 text-sm mb-8">Fill out basic details about your property.</p>
 
                 <div className="mb-6">
@@ -506,6 +560,8 @@ export default function PropertyFormPage() {
                 <h2 className="text-2xl font-black text-slate-900 mb-0.5">Tell us about your property</h2>
                 <p className="text-slate-500 text-sm mb-8">Provide details to attract the right buyers.</p>
 
+                {!isPlot && (
+                <>
                 {/* Floor Details */}
                 <div className="mb-8">
                   <p className="text-sm font-bold text-slate-800 mb-1">Floor Details</p>
@@ -530,17 +586,19 @@ export default function PropertyFormPage() {
                     </select>
                   </div>
                 </div>
+                </>
+                )}
 
                 {/* Area Details */}
                 <div className="mb-8">
                   <p className="text-sm font-bold text-slate-800 mb-1">Add Area Details</p>
-                  <p className="text-xs text-slate-400 mb-3">Plot area is mandatory</p>
+                  <p className="text-xs text-slate-400 mb-3">{isPlot ? 'Plot area is mandatory' : 'Built-up area is mandatory'}</p>
                   <div className="flex gap-0 border border-slate-200 rounded-xl overflow-hidden mb-2">
                     <input
                       type="number" min="0"
                       value={form.plotArea}
                       onChange={e => { set('plotArea', e.target.value); setErrors(err => ({...err, plotArea: ''})); }}
-                      placeholder="Plot Area"
+                      placeholder={isPlot ? 'Plot Area' : 'Built-up Area'}
                       className={`flex-1 px-4 py-3 text-sm text-slate-900 placeholder-slate-400 outline-none ${errors.plotArea ? 'border-red-400' : ''}`}
                     />
                     <select
@@ -574,6 +632,8 @@ export default function PropertyFormPage() {
                   </div>
                 </div>
 
+                {isPlot && (
+                <>
                 {/* Property Dimensions */}
                 <div className="mb-8">
                   <p className="text-sm font-bold text-slate-800 mb-1">Property Dimensions <span className="text-slate-400 text-xs italic font-medium">(Optional)</span></p>
@@ -666,16 +726,18 @@ export default function PropertyFormPage() {
                     ))}
                   </div>
                 </div>
+                </>
+                )}
 
                 {/* Possession By */}
                 <div className="mb-8">
-                  <p className="text-sm font-bold text-slate-800 mb-3">Possession By</p>
+                  <p className="text-sm font-bold text-slate-800 mb-3">{isRental ? 'Available From' : 'Possession By'}</p>
                   <select
                     value={form.possessionBy}
                     onChange={e => set('possessionBy', e.target.value)}
                     className="w-full sm:w-72 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 outline-none focus:border-slate-900 transition-colors bg-white"
                   >
-                    <option value="">Expected by</option>
+                    <option value="">{isRental ? 'Select' : 'Expected by'}</option>
                     <option value="Immediate">Immediate</option>
                     <option value="Within 3 months">Within 3 months</option>
                     <option value="Within 6 months">Within 6 months</option>
@@ -684,6 +746,8 @@ export default function PropertyFormPage() {
                   </select>
                 </div>
 
+                {hasRooms && (
+                <>
                 {/* Room Details */}
                 <div className="mb-8">
                   <p className="text-sm font-bold text-slate-800 mb-5">Add Room Details</p>
@@ -765,8 +829,29 @@ export default function PropertyFormPage() {
                       </div>
                     </div>
                   ))}
+                  {errors.bedrooms && <p className="text-red-500 text-xs -mt-2">{errors.bedrooms}</p>}
                 </div>
+                </>
+                )}
 
+                {!isPlot && (
+                <div className="mb-8">
+                  <p className="text-sm font-bold text-slate-800 mb-3">Furnishing</p>
+                  <div className="flex gap-2 flex-wrap">
+                    {FURNISHING_OPTIONS.map(([value, text]) => (
+                      <button key={value} type="button" onClick={() => set('furnishingType', value)}
+                        className={`px-5 py-2.5 rounded-full border text-sm font-medium transition-all ${
+                          form.furnishingType === value
+                            ? 'border-slate-900 bg-slate-900 text-white'
+                            : 'border-slate-300 text-slate-600 hover:border-slate-600'
+                        }`}>{text}</button>
+                    ))}
+                  </div>
+                </div>
+                )}
+
+                {!isPlot && !isRental && (
+                <>
                 {/* Availability Status */}
                 <div className="mb-8">
                   <p className="text-sm font-bold text-slate-800 mb-3">Availability Status</p>
@@ -781,7 +866,11 @@ export default function PropertyFormPage() {
                     ))}
                   </div>
                 </div>
+                </>
+                )}
 
+                {!isRental && (
+                <>
                 {/* Ownership */}
                 <div className="mb-8">
                   <div className="flex items-center gap-2 mb-3">
@@ -819,52 +908,71 @@ export default function PropertyFormPage() {
                     ))}
                   </div>
                 </div>
+                </>
+                )}
 
                 {/* Price Details */}
                 <div className="mb-8">
-                  <p className="text-sm font-bold text-slate-800 mb-3">Price Details</p>
-                  <div className="flex gap-3 mb-1">
+                  <p className="text-sm font-bold text-slate-800 mb-3">{isRental ? 'Rent Details' : 'Price Details'}</p>
+                  <div className="flex flex-col sm:flex-row gap-3 mb-1">
                     <div className="flex-1 flex items-center border border-slate-200 rounded-xl overflow-hidden focus-within:border-slate-900 transition-colors">
                       <span className="px-3 text-slate-400 text-sm">₹</span>
                       <input
                         type="text"
+                        inputMode="numeric"
                         value={form.price}
                         onChange={e => {
-                          const v = e.target.value.replace(/[^0-9]/g, '');
-                          const inWords = v ? Number(v).toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }) : '';
-                          setForm(f => ({ ...f, price: v, priceInWords: inWords }));
+                          set('price', e.target.value.replace(/[^0-9]/g, ''));
                           setErrors(err => ({...err, price: ''}));
                         }}
-                        placeholder="Expected Price"
+                        placeholder={isRental ? 'Monthly Rent' : 'Expected Price'}
                         className="flex-1 py-3 pr-4 text-sm text-slate-900 placeholder-slate-400 outline-none bg-transparent"
                       />
                     </div>
-                    <div className="flex-1 flex items-center border border-slate-200 rounded-xl overflow-hidden focus-within:border-slate-900 transition-colors">
-                      <span className="px-3 text-slate-400 text-sm">₹</span>
-                      <input
-                        type="text"
-                        value={form.pricePerSqYard}
-                        onChange={e => set('pricePerSqYard', e.target.value.replace(/[^0-9]/g, ''))}
-                        placeholder="Price per sq.yards"
-                        className="flex-1 py-3 pr-4 text-sm text-slate-900 placeholder-slate-400 outline-none bg-transparent"
-                      />
-                    </div>
+                    {isRental ? (
+                      <div className="flex-1 flex items-center border border-slate-200 rounded-xl overflow-hidden focus-within:border-slate-900 transition-colors">
+                        <span className="px-3 text-slate-400 text-sm">₹</span>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={form.security}
+                          onChange={e => set('security', e.target.value.replace(/[^0-9]/g, ''))}
+                          placeholder="Security Deposit (optional)"
+                          className="flex-1 py-3 pr-4 text-sm text-slate-900 placeholder-slate-400 outline-none bg-transparent"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex-1 flex items-center border border-slate-200 rounded-xl overflow-hidden focus-within:border-slate-900 transition-colors">
+                        <span className="px-3 text-slate-400 text-sm">₹</span>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={form.pricePerSqYard}
+                          onChange={e => set('pricePerSqYard', e.target.value.replace(/[^0-9]/g, ''))}
+                          placeholder={`Price per ${form.plotAreaUnit} (optional)`}
+                          className="flex-1 py-3 pr-4 text-sm text-slate-900 placeholder-slate-400 outline-none bg-transparent"
+                        />
+                      </div>
+                    )}
                   </div>
                   {errors.price && <p className="text-red-500 text-xs mb-1">{errors.price}</p>}
-                  {form.priceInWords && (
-                    <p className="text-xs text-slate-500 mb-3">₹ {form.priceInWords}</p>
+                  {Number(form.price) > 0 && (
+                    <p className="text-xs text-slate-500 mb-3">
+                      Buyers will see: <span className="font-semibold text-slate-700">{formatPrice(form.price)}{isRental ? ' / month' : ''}</span>
+                    </p>
                   )}
                   <div className="flex flex-wrap gap-x-6 gap-y-2 mt-3">
-                    {[['allInclusive','All inclusive price'],['taxExcluded','Tax and Govt. charges excluded'],['priceNegotiable','Price Negotiable']].map(([key, label]) => (
+                    {(isRental
+                      ? [['priceNegotiable', 'Rent Negotiable']]
+                      : [['allInclusive', 'All inclusive price'], ['taxExcluded', 'Tax and Govt. charges excluded'], ['priceNegotiable', 'Price Negotiable']]
+                    ).map(([key, label]) => (
                       <label key={key} className="flex items-center gap-2 cursor-pointer select-none">
-                        <span
-                          onClick={() => set(key, !form[key])}
-                          className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all ${
-                            form[key] ? 'bg-slate-900 border-slate-900' : 'border-slate-300 hover:border-slate-500'
-                          }`}
-                        >
-                          {form[key] && <Check className="w-2.5 h-2.5 text-white" />}
-                        </span>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(form[key])}
+                          onChange={() => set(key, !form[key])}
+                          className="w-4 h-4 accent-slate-900"
+                        />
                         <span className="text-sm text-slate-700">{label}</span>
                       </label>
                     ))}

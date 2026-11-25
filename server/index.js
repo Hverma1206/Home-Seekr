@@ -12,6 +12,7 @@ import localityRoutes from './routes/localityRoutes.js'
 import leadRoutes from './routes/leadRoutes.js'
 import projectRoutes from './routes/projectRoutes.js'
 import alertRoutes from './routes/alertRoutes.js'
+import siteRoutes from './routes/siteRoutes.js'
 import uploadRoutes, { UPLOAD_DIR } from './routes/uploadRoutes.js'
 import { notFound, errorHandler } from './middleware/errorMiddleware.js'
 import { seedSampleProperties } from './utils/seedSampleData.js'
@@ -35,6 +36,7 @@ app.use('/api/locality', localityRoutes)
 app.use('/api/leads', leadRoutes)
 app.use('/api/projects', projectRoutes)
 app.use('/api/alerts', alertRoutes)
+app.use('/api/site', siteRoutes)
 app.use('/api/uploads', uploadRoutes)
 app.use('/uploads', express.static(UPLOAD_DIR))
 

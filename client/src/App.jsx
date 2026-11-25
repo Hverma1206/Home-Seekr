@@ -16,6 +16,9 @@ import WishlistPage from './pages/WishlistPage';
 import ComparePage from './pages/ComparePage';
 import ProjectsPage from './pages/ProjectsPage';
 import ProjectDetailsPage from './pages/ProjectDetailsPage';
+import InfoPage from './pages/InfoPage';
+import ContactPage from './pages/ContactPage';
+import NotFoundPage from './pages/NotFoundPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import { useAuth } from './hooks/useAuth';
 import useGeoLocation from './hooks/useGeoLocation';
@@ -24,6 +27,7 @@ import { userService } from './services/userService';
 import { getLocationContext } from './utils/locationUtils';
 
 const RECENT_SEARCHES_KEY = 'estatehub.recentSearches';
+const INFO_VIEWS = ['about', 'privacy', 'terms', 'contact'];
 const LISTINGS_PAGE_SIZE = 20;
 
 const sanitizeFilters = (filters = {}) => Object.fromEntries(
@@ -131,8 +135,12 @@ function MainLayout() {
       setCurrentView('wishlist');
     } else if (location.pathname === '/compare') {
       setCurrentView('compare');
-    } else {
+    } else if (INFO_VIEWS.includes(location.pathname.slice(1))) {
+      setCurrentView(location.pathname.slice(1));
+    } else if (location.pathname === '/') {
       setCurrentView('home');
+    } else {
+      setCurrentView('notfound');
     }
   }, [location.pathname, selectedProperty]);
 
@@ -437,6 +445,11 @@ function MainLayout() {
           {currentView === 'login' && (
             <LoginSignupPage key="login" onLoginSuccess={handleLoginSuccess} />
           )}
+          {['about', 'privacy', 'terms'].includes(currentView) && (
+            <InfoPage key={currentView} page={currentView} />
+          )}
+          {currentView === 'contact' && <ContactPage key="contact" />}
+          {currentView === 'notfound' && <NotFoundPage key="notfound" />}
         </AnimatePresence>
       </main>
 
@@ -453,6 +466,7 @@ export default function App() {
         path="/dashboard"
         element={
           <ProtectedRoute>
+            <Navbar currentView="dashboard" />
             <DashboardPage />
           </ProtectedRoute>
         }
@@ -461,6 +475,7 @@ export default function App() {
         path="/profile"
         element={
           <ProtectedRoute>
+            <Navbar currentView="profile" />
             <ProfilePage />
           </ProtectedRoute>
         }

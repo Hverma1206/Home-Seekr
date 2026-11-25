@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion'
+import { motion as Motion } from 'framer-motion'
 import { MapPin, Calendar, Building2 } from 'lucide-react'
 import Badge from './ui/Badge'
 
@@ -24,7 +24,7 @@ const ProjectCard = ({ project, onClick }) => {
     : 'TBD'
 
   return (
-    <motion.div
+    <Motion.div
       whileHover={{ y: -8 }}
       className="group cursor-pointer bg-white rounded-[2rem] p-3 shadow-xl shadow-slate-200/40 hover:shadow-2xl hover:shadow-slate-300/50 transition-all duration-500 border border-slate-100"
       onClick={() => onClick?.(project)}
@@ -64,7 +64,7 @@ const ProjectCard = ({ project, onClick }) => {
           </span>
         </div>
       </div>
-    </motion.div>
+    </Motion.div>
   )
 }
 

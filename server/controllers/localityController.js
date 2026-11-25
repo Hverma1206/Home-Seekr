@@ -2,6 +2,9 @@ import Locality from '../models/Locality.js'
 import Property from '../models/Property.js'
 import Review from '../models/Review.js'
 
+// Request values go into regexes: escape them so input like ".*" or "(a+)+" is matched literally
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
 const parseNumber = (value) => {
 	const parsed = Number(value)
 	return Number.isFinite(parsed) ? parsed : null
@@ -19,8 +22,8 @@ export const getLocalityInsights = async (req, res, next) => {
 		}
 
 		let locality = await Locality.findOne({
-			city: new RegExp(`^${city}$`, 'i'),
-			name: new RegExp(`^${localityName}$`, 'i'),
+			city: new RegExp(`^${escapeRegExp(String(city))}$`, 'i'),
+			name: new RegExp(`^${escapeRegExp(String(localityName))}$`, 'i'),
 		})
 
 		if (!locality) {
@@ -78,7 +81,7 @@ export const getLocalitiesByCity = async (req, res, next) => {
 		const { city } = req.params
 		const { limit = 50, sort = 'popular' } = req.query
 
-		const filters = { city: new RegExp(`^${city}$`, 'i'), isActive: true }
+		const filters = { city: new RegExp(`^${escapeRegExp(String(city))}$`, 'i'), isActive: true }
 
 		let sortOption = { searchCount: -1 }
 		if (sort === 'price_low') sortOption = { avgPricePerSqFt: 1 }
@@ -111,14 +114,14 @@ export const getSimilarLocalities = async (req, res, next) => {
 		const { city, localityName } = req.query
 
 		const locality = await Locality.findOne({
-			city: new RegExp(`^${city}$`, 'i'),
-			name: new RegExp(`^${localityName}$`, 'i'),
+			city: new RegExp(`^${escapeRegExp(String(city))}$`, 'i'),
+			name: new RegExp(`^${escapeRegExp(String(localityName))}$`, 'i'),
 		})
 
 		if (!locality || !locality.neighboringLocalities || locality.neighboringLocalities.length === 0) {
 			// Fallback: find localities in the same city with similar price range
 			const fallbackLocalities = await Locality.find({
-				city: new RegExp(`^${city}$`, 'i'),
+				city: new RegExp(`^${escapeRegExp(String(city))}$`, 'i'),
 				name: { $ne: localityName },
 				avgPricePerSqFt: {
 					$gte: (locality?.avgPricePerSqFt || 0) * 0.8,
@@ -129,7 +132,7 @@ export const getSimilarLocalities = async (req, res, next) => {
 		}
 
 		const neighbors = await Locality.find({
-			city: new RegExp(`^${city}$`, 'i'),
+			city: new RegExp(`^${escapeRegExp(String(city))}$`, 'i'),
 			name: { $in: locality.neighboringLocalities },
 		})
 
@@ -150,10 +153,10 @@ export const getPriceTrends = async (req, res, next) => {
 		}
 
 		const filters = {
-			name: new RegExp(`^${localityName}$`, 'i'),
+			name: new RegExp(`^${escapeRegExp(String(localityName))}$`, 'i'),
 		}
 		if (city) {
-			filters.city = new RegExp(`^${city}$`, 'i')
+			filters.city = new RegExp(`^${escapeRegExp(String(city))}$`, 'i')
 		}
 
 		const locality = await Locality.findOne(filters).sort({ searchCount: -1 })
@@ -187,8 +190,8 @@ export const getLocalityReviews = async (req, res, next) => {
 		const { limit = 20, page = 1 } = req.query
 
 		const locality = await Locality.findOne({
-			city: new RegExp(`^${city}$`, 'i'),
-			name: new RegExp(`^${localityName}$`, 'i'),
+			city: new RegExp(`^${escapeRegExp(String(city))}$`, 'i'),
+			name: new RegExp(`^${escapeRegExp(String(localityName))}$`, 'i'),
 		})
 
 		if (!locality) {
@@ -234,7 +237,7 @@ export const getPopularLocalities = async (req, res, next) => {
 		const { city, limit = 10 } = req.query
 
 		const filters = { isActive: true }
-		if (city) filters.city = new RegExp(`^${city}$`, 'i')
+		if (city) filters.city = new RegExp(`^${escapeRegExp(String(city))}$`, 'i')
 
 		const popular = await Locality.find(filters)
 			.select(
@@ -264,9 +267,9 @@ export const searchLocalities = async (req, res, next) => {
 
 		const filters = {
 			isActive: true,
-			name: new RegExp(q, 'i'),
+			name: new RegExp(escapeRegExp(String(q)), 'i'),
 		}
-		if (city) filters.city = new RegExp(`^${city}$`, 'i')
+		if (city) filters.city = new RegExp(`^${escapeRegExp(String(city))}$`, 'i')
 
 		const localities = await Locality.find(filters)
 			.select('name city avgPricePerSqFt averageRating')
@@ -287,7 +290,7 @@ export const getRecommendations = async (req, res, next) => {
 
 		// 1. Similar Properties in same locality or price range
 		let query = { status: 'active' }
-		if (city) query.city = new RegExp(`^${city}$`, 'i')
+		if (city) query.city = new RegExp(`^${escapeRegExp(String(city))}$`, 'i')
 
 		if (propertyId) {
 			const currentProp = await Property.findById(propertyId)
@@ -305,7 +308,7 @@ export const getRecommendations = async (req, res, next) => {
 				]
 			}
 		} else if (locality) {
-			query.locality = new RegExp(`^${locality}$`, 'i')
+			query.locality = new RegExp(`^${escapeRegExp(String(locality))}$`, 'i')
 		}
 
 		const recommendedProperties = await Property.find(query)

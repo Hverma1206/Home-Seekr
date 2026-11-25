@@ -1,5 +1,5 @@
-import { motion } from 'framer-motion';
-import { ArrowUpRight, Building } from 'lucide-react';
+import { motion as Motion } from 'framer-motion';
+import { ArrowUpRight, Building, Building2, Users, IndianRupee, Send } from 'lucide-react';
 import { staggerContainer } from '../animations/variants';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
@@ -18,9 +18,10 @@ const HomePage = ({
   onToggleSave,
 }) => {
   const featured = properties.slice(0, 3);
+  const browse = (filters) => onViewChange('listings', { filters });
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pb-20">
+    <Motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pb-20">
       
       {/* Editorial Hero Section */}
       <section className="px-4 sm:px-6 lg:px-8 max-w-[1400px] mx-auto pt-28 pb-10">
@@ -37,7 +38,7 @@ const HomePage = ({
           </div>
           
           <div className="relative z-10 w-full max-w-5xl mx-auto text-center">
-            <motion.div
+            <Motion.div
               initial={{ y: 30, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ duration: 0.8 }}
@@ -51,22 +52,30 @@ const HomePage = ({
               <h1 className="text-5xl md:text-7xl lg:text-8xl font-black text-white mb-6 tracking-tighter leading-[1.1]">
                 Find the place <br className="hidden md:block"/> that fits your life.
               </h1>
-            </motion.div>
+            </Motion.div>
             
             <SearchBar onSearch={onSearch || (() => onViewChange('listings'))} />
           </div>
         </div>
       </section>
 
-      {/* Stats/Logos Strip */}
+      {/* What the platform offers */}
       <section className="py-10 border-b border-slate-100">
-        <div className="max-w-7xl mx-auto px-6 lg:px-8 flex flex-wrap justify-center md:justify-between items-center gap-8 text-slate-400 font-bold uppercase tracking-widest text-sm">
-          <span>Forbes Real Estate</span>
-          <span>Architectural Digest</span>
-          <span>Vogue Living</span>
-          <span className="hidden sm:block">Bloomberg</span>
-          <span className="hidden md:block">The Wall Street Journal</span>
-        </div>
+        <ul className="max-w-7xl mx-auto px-6 lg:px-8 grid grid-cols-2 lg:grid-cols-4 gap-6 text-slate-600 font-semibold text-sm">
+          {[
+            { icon: <Building2 className="w-5 h-5" />, label: 'Buy, rent, PG & commercial' },
+            { icon: <Users className="w-5 h-5" />, label: 'Owners, agents & builders' },
+            { icon: <IndianRupee className="w-5 h-5" />, label: 'List your property free' },
+            { icon: <Send className="w-5 h-5" />, label: 'Enquiries go straight to the poster' },
+          ].map(({ icon, label }) => (
+            <li key={label} className="flex items-center gap-3">
+              <span className="w-10 h-10 shrink-0 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                {icon}
+              </span>
+              {label}
+            </li>
+          ))}
+        </ul>
       </section>
 
       {/* Featured Collection Section */}
@@ -74,18 +83,20 @@ const HomePage = ({
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row justify-between items-end mb-16 gap-6">
             <div className="max-w-2xl">
-              <h2 className="text-4xl md:text-5xl font-black text-slate-900 tracking-tighter mb-4">The Signature <br/> Collection.</h2>
-              <p className="text-lg text-slate-500 font-medium">Curated homes of exceptional quality and design, handpicked by our expert real estate curators.</p>
+              <h2 className="text-4xl md:text-5xl font-black text-slate-900 tracking-tighter mb-4">
+                Fresh listings{locationMeta?.city ? <><br />in {locationMeta.city}.</> : '.'}
+              </h2>
+              <p className="text-lg text-slate-500 font-medium">The newest homes from owners, agents and builders, updated as they're posted.</p>
               {locationError && (
                 <p className="text-xs text-slate-400 font-semibold mt-3">{locationError}</p>
               )}
             </div>
             <Button variant="secondary" onClick={() => onViewChange('listings')} icon={<ArrowUpRight className="w-5 h-5"/>}>
-              View Collection
+              View all listings
             </Button>
           </div>
           
-          <motion.div 
+          <Motion.div
             variants={staggerContainer}
             initial="hidden"
             whileInView="show"
@@ -93,7 +104,9 @@ const HomePage = ({
             className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"
           >
             {isLoading && !featured.length ? (
-              <div className="text-slate-400 font-semibold">Loading tailored listings...</div>
+              <div className="text-slate-400 font-semibold">Loading listings...</div>
+            ) : !featured.length ? (
+              <div className="text-slate-500 font-semibold">No listings yet. Check back soon, or post your own property.</div>
             ) : (
               featured.map(prop => (
                 <PropertyCard
@@ -105,7 +118,7 @@ const HomePage = ({
                 />
               ))
             )}
-          </motion.div>
+          </Motion.div>
         </div>
       </section>
 
@@ -116,38 +129,38 @@ const HomePage = ({
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-auto md:h-[600px]">
             {/* Large Card */}
-            <div className="md:col-span-2 relative rounded-[2.5rem] overflow-hidden group cursor-pointer h-64 md:h-full" onClick={() => onViewChange('listings')}>
-              <img src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt="Villas" />
+            <button type="button" className="md:col-span-2 relative rounded-[2.5rem] overflow-hidden group cursor-pointer h-64 md:h-full text-left" onClick={() => browse({ propertyCategory: 'residential', selectedType: 'Villa' })}>
+              <img src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80" className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt="" />
               <div className="absolute inset-0 bg-slate-900/30 group-hover:bg-slate-900/20 transition-colors" />
               <div className="absolute bottom-8 left-8">
-                <Badge variant="light" className="mb-3">800+ Properties</Badge>
-                <h3 className="text-4xl font-bold text-white tracking-tight">Luxury Villas</h3>
+                <Badge variant="light" className="mb-3">Independent homes</Badge>
+                <h3 className="text-4xl font-bold text-white tracking-tight">Villas & Houses</h3>
               </div>
-            </div>
+            </button>
             
             {/* Stacked Cards */}
             <div className="flex flex-col gap-6 h-full">
-              <div className="flex-1 relative rounded-[2.5rem] overflow-hidden group cursor-pointer min-h-[250px]" onClick={() => onViewChange('listings')}>
-                <img src="https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=800&q=80" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt="Apartments" />
+              <button type="button" className="flex-1 relative rounded-[2.5rem] overflow-hidden group cursor-pointer min-h-[250px] text-left" onClick={() => browse({ propertyCategory: 'residential', selectedType: 'Apartment' })}>
+                <img src="https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=800&q=80" className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt="" />
                 <div className="absolute inset-0 bg-slate-900/30 group-hover:bg-slate-900/20 transition-colors" />
                 <div className="absolute bottom-6 left-6">
-                  <Badge variant="light" className="mb-2">4.5k+ Properties</Badge>
+                  <Badge variant="light" className="mb-2">Flats & societies</Badge>
                   <h3 className="text-2xl font-bold text-white tracking-tight">Apartments</h3>
                 </div>
-              </div>
-              <div className="flex-1 relative rounded-[2.5rem] overflow-hidden group cursor-pointer min-h-[250px] bg-emerald-500 flex flex-col items-center justify-center text-center p-8" onClick={() => onViewChange('listings')}>
+              </button>
+              <button type="button" className="flex-1 relative rounded-[2.5rem] overflow-hidden group cursor-pointer min-h-[250px] bg-emerald-500 flex flex-col items-center justify-center text-center p-8" onClick={() => browse({ propertyCategory: 'commercial' })}>
                 <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mb-4 text-white">
                   <Building className="w-8 h-8" />
                 </div>
                 <h3 className="text-2xl font-bold text-white tracking-tight mb-2">Commercial Spaces</h3>
                 <p className="text-emerald-100 font-medium mb-6">Offices & Retail</p>
-                <button className="bg-white text-emerald-600 px-6 py-2.5 rounded-full font-bold text-sm w-full hover:shadow-lg transition-shadow">Explore Now</button>
-              </div>
+                <span className="bg-white text-emerald-600 px-6 py-2.5 rounded-full font-bold text-sm w-full group-hover:shadow-lg transition-shadow">Explore Now</span>
+              </button>
             </div>
           </div>
         </div>
       </section>
-    </motion.div>
+    </Motion.div>
   );
 };
 

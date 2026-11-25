@@ -23,6 +23,8 @@ const ComparePage = () => {
   const [compareList, setCompareList] = useState(() => readStorage(COMPARE_KEY, []));
 
   const columns = compareList.length;
+  // Narrow label column on phones; --cols is set on the wrapper below
+  const gridColumns = 'grid-cols-[110px_repeat(var(--cols),minmax(0,1fr))] sm:grid-cols-[200px_repeat(var(--cols),minmax(0,1fr))]';
 
   const comparisonRows = useMemo(() => ([
     { label: 'Price', value: (property) => property.price || 'N/A' },
@@ -57,7 +59,7 @@ const ComparePage = () => {
         <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 px-8 py-16 text-center">
           <h1 className="text-3xl font-black text-slate-900">No properties to compare</h1>
           <p className="text-slate-500 mt-3">Add listings from your wishlist to compare them here.</p>
-          <Button variant="primary" className="mt-6" onClick={() => navigate('/wishlist')}>
+          <Button variant="primary" className="mt-6 mx-auto" onClick={() => navigate('/wishlist')}>
             Back to Wishlist
           </Button>
         </div>
@@ -85,10 +87,11 @@ const ComparePage = () => {
         </div>
       </div>
 
-      <div
-        className="grid gap-6"
-        style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
-      >
+      {/* Side-by-side columns need room: scroll sideways on small screens instead of squashing them */}
+      <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 pb-2">
+      <div style={{ minWidth: `${columns * 220 + 110}px`, '--cols': columns }}>
+      <div className={`grid gap-4 sm:gap-6 ${gridColumns}`}>
+        <div aria-hidden="true" />
         {compareList.map((property) => (
           <div key={property.id} className="rounded-[2rem] bg-white border border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
             <div className="h-48 w-full overflow-hidden">
@@ -119,12 +122,8 @@ const ComparePage = () => {
 
       <div className="mt-12 space-y-4">
         {comparisonRows.map((row) => (
-          <div
-            key={row.label}
-            className="grid gap-4 items-start"
-            style={{ gridTemplateColumns: `200px repeat(${columns}, minmax(0, 1fr))` }}
-          >
-            <div className="text-xs uppercase tracking-[0.2em] text-slate-500 font-semibold pt-2">
+          <div key={row.label} className={`grid gap-4 items-start ${gridColumns}`}>
+            <div className="text-[10px] sm:text-xs uppercase tracking-wider sm:tracking-[0.2em] text-slate-500 font-semibold pt-2 break-words">
               {row.label}
             </div>
             {compareList.map((property) => (
@@ -134,6 +133,8 @@ const ComparePage = () => {
             ))}
           </div>
         ))}
+      </div>
+      </div>
       </div>
     </div>
   );

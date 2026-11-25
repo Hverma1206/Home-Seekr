@@ -1,39 +1,45 @@
 import { useCallback, useEffect, useState } from 'react'
 
-const DEFAULT_ERROR = 'Unable to fetch your location.'
+const UNSUPPORTED_ERROR = 'Geolocation is not supported by your browser.'
+const DENIED_ERROR = 'Location access denied. Showing nearby popular listings instead.'
+
+const isSupported = () => typeof navigator !== 'undefined' && Boolean(navigator.geolocation)
 
 const useGeoLocation = ({ auto = true, timeout = 10000 } = {}) => {
   const [coords, setCoords] = useState(null)
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(() => (auto && !isSupported() ? UNSUPPORTED_ERROR : ''))
+  const [loading, setLoading] = useState(() => auto && isSupported())
 
-  const request = useCallback(() => {
-    if (!navigator.geolocation) {
-      setError('Geolocation is not supported by your browser.')
-      return
-    }
-
-    setLoading(true)
-    setError('')
-
+  // State is only set from the browser's callbacks, so this is safe to start from an effect
+  const locate = useCallback(() => {
     navigator.geolocation.getCurrentPosition(
       ({ coords: position }) => {
         setCoords({ latitude: position.latitude, longitude: position.longitude })
         setLoading(false)
       },
       () => {
-        setError('Location access denied. Showing nearby popular listings instead.')
+        setError(DENIED_ERROR)
         setLoading(false)
       },
       { timeout },
     )
   }, [timeout])
 
-  useEffect(() => {
-    if (auto) {
-      request()
+  const request = useCallback(() => {
+    if (!isSupported()) {
+      setError(UNSUPPORTED_ERROR)
+      return
     }
-  }, [auto, request])
+    setLoading(true)
+    setError('')
+    locate()
+  }, [locate])
+
+  useEffect(() => {
+    if (auto && isSupported()) {
+      locate()
+    }
+  }, [auto, locate])
 
   return { coords, error, loading, request }
 }

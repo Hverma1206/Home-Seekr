@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Home, Menu, X, ChevronDown, LogOut, LayoutDashboard, UserCog, Heart, ListChecks } from 'lucide-react';
 import Button from '../ui/Button';
 import { useAuth } from '../../hooks/useAuth';
@@ -13,12 +13,24 @@ const NAV_LINKS = [
   { label: 'Projects', view: 'projects' },
 ];
 
+const VIEW_PATHS = { home: '/', listings: '/listings', projects: '/projects', wishlist: '/wishlist', compare: '/compare' };
+
+// Inside MainLayout the parent handles navigation; on standalone pages (dashboard, profile) the navbar routes itself
 const Navbar = ({ onViewChange, currentView, onPostProperty }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const goTo = onViewChange || ((view, navState) => {
+    if (view === 'login') {
+      navigate('/login', { state: { from: location.pathname } });
+      return;
+    }
+    navigate(VIEW_PATHS[view] || '/', navState ? { state: navState } : undefined);
+  });
+  const postProperty = onPostProperty || (() => navigate('/post-property'));
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const dropdownRef = useRef(null);
-  const navigate = useNavigate();
   const { user, isAuthenticated, isLoading, logout } = useAuth();
 
   const displayName = user?.firstName
@@ -51,12 +63,12 @@ const Navbar = ({ onViewChange, currentView, onPostProperty }) => {
 
   const handleLoginClick = () => {
     setProfileOpen(false);
-    onViewChange('login');
+    goTo('login');
   };
 
   const openLink = (item) => {
     setMobileMenu(false);
-    onViewChange(item.view, item.filters ? { filters: item.filters } : undefined);
+    goTo(item.view, item.filters ? { filters: item.filters } : undefined);
   };
 
   const handleLogout = () => {
@@ -69,14 +81,14 @@ const Navbar = ({ onViewChange, currentView, onPostProperty }) => {
       <div className={`max-w-6xl mx-auto transition-all duration-500 ${isScrolled ? 'bg-white/80 backdrop-blur-xl shadow-2xl shadow-slate-200/50 border border-white/50 rounded-full py-3 px-6' : 'bg-transparent py-4 px-2'}`}>
         <div className="flex justify-between items-center">
           {/* Logo */}
-          <div className="flex items-center gap-2 cursor-pointer group" onClick={() => onViewChange('home')}>
+          <button type="button" aria-label="RealtyHub home" className="flex items-center gap-2 cursor-pointer group" onClick={() => goTo('home')}>
             <div className={`p-2 rounded-full transition-colors ${isScrolled ? 'bg-slate-900 text-white' : 'bg-white text-slate-900 group-hover:bg-slate-900 group-hover:text-white'}`}>
               <Home className="w-5 h-5" />
             </div>
             <span className={`text-xl font-bold tracking-tighter ${isScrolled ? 'text-slate-900' : 'text-slate-900 drop-shadow-sm'}`}>
               RealtyHub.
             </span>
-          </div>
+          </button>
 
           {/* Desktop Links */}
           {currentView !== 'listings' && (
@@ -190,7 +202,7 @@ const Navbar = ({ onViewChange, currentView, onPostProperty }) => {
               </div>
             )}
 
-            <Button variant="primary" className="!py-2.5 !px-5 !text-sm" onClick={onPostProperty}>Post Property</Button>
+            <Button variant="primary" className="!py-2.5 !px-5 !text-sm" onClick={postProperty}>Post Property</Button>
           </div>
 
           {/* Mobile Toggle */}
@@ -216,8 +228,14 @@ const Navbar = ({ onViewChange, currentView, onPostProperty }) => {
                 <button onClick={() => { setMobileMenu(false); navigate('/dashboard'); }} className={mobileLinkClass}>
                   Dashboard
                 </button>
+                <button onClick={() => { setMobileMenu(false); navigate('/profile'); }} className={mobileLinkClass}>
+                  Edit Profile
+                </button>
                 <button onClick={() => { setMobileMenu(false); navigate('/wishlist'); }} className={mobileLinkClass}>
                   Saved Properties
+                </button>
+                <button onClick={() => { setMobileMenu(false); navigate('/compare'); }} className={mobileLinkClass}>
+                  Compare
                 </button>
                 <button onClick={() => { setMobileMenu(false); handleLogout(); }} className={`${mobileLinkClass} !text-red-600`}>
                   Logout
@@ -228,7 +246,7 @@ const Navbar = ({ onViewChange, currentView, onPostProperty }) => {
                 Login / Signup
               </button>
             )}
-            <Button variant="primary" className="!py-3 mt-2" onClick={() => { setMobileMenu(false); onPostProperty(); }}>
+            <Button variant="primary" className="!py-3 mt-2" onClick={() => { setMobileMenu(false); postProperty(); }}>
               Post Property
             </Button>
           </div>

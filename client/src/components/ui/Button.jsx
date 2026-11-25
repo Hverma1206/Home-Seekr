@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion';
+import { motion as Motion } from 'framer-motion';
 
 const Button = ({
   children,
@@ -18,7 +18,7 @@ const Button = ({
     ghost: "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
   };
   return (
-    <motion.button 
+    <Motion.button 
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
       className={`${baseStyle} ${variants[variant]} ${className}`}
@@ -29,7 +29,7 @@ const Button = ({
     >
       {children}
       {icon && <span className="ml-1">{icon}</span>}
-    </motion.button>
+    </Motion.button>
   );
 };
 

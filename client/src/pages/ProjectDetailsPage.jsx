@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { motion } from 'framer-motion'
-import { ArrowLeft, Building2, Calendar, MapPin, Star } from 'lucide-react'
+import { motion as Motion } from 'framer-motion'
+import { ArrowLeft, Building2, Calendar, MapPin, FileText, Phone, Mail } from 'lucide-react'
 import Button from '../components/ui/Button'
 import Badge from '../components/ui/Badge'
 import ProjectCard from '../components/ProjectCard'
@@ -36,7 +36,7 @@ const ProjectDetailsPage = () => {
         if (!isActive) return
         setProject(response.project)
         setSimilarProjects(response.similarProjects || [])
-      } catch (err) {
+      } catch {
         if (!isActive) return
         setError('Unable to load project details.')
       } finally {
@@ -52,6 +52,9 @@ const ProjectDetailsPage = () => {
       isActive = false
     }
   }, [projectId])
+
+  // Builder-supplied link: only allow http(s) so a stored "javascript:" URL can't run in the page
+  const brochureUrl = /^https?:\/\//i.test(project?.brochure || '') ? project.brochure : ''
 
   const priceLabel = useMemo(() => {
     if (!project) return ''
@@ -86,7 +89,7 @@ const ProjectDetailsPage = () => {
   const configurations = project.configurations || []
 
   return (
-    <motion.div
+    <Motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -176,7 +179,7 @@ const ProjectDetailsPage = () => {
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-slate-500">Configuration details coming soon.</p>
+              <p className="text-sm text-slate-500">The builder hasn't shared configuration details yet.</p>
             )}
           </div>
         </div>
@@ -199,9 +202,37 @@ const ProjectDetailsPage = () => {
                 Possession {possession}
               </div>
             </div>
-            <Button variant="accent" className="w-full mt-6">
-              Get Brochure
-            </Button>
+            {brochureUrl && (
+              <a
+                href={brochureUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full mt-6 px-6 py-3.5 rounded-full font-semibold bg-emerald-500 text-white hover:bg-emerald-600 transition-colors flex items-center justify-center gap-2"
+              >
+                <FileText className="w-4 h-4" /> Download brochure
+              </a>
+            )}
+            {project.contactPhone && (
+              <a
+                href={`tel:${project.contactPhone}`}
+                className="w-full mt-3 px-6 py-3.5 rounded-full font-semibold bg-white/10 text-white hover:bg-white/20 transition-colors flex items-center justify-center gap-2"
+              >
+                <Phone className="w-4 h-4" /> Call {project.contactPerson || 'sales'}
+              </a>
+            )}
+            {project.contactEmail && (
+              <a
+                href={`mailto:${project.contactEmail}?subject=${encodeURIComponent(`Enquiry: ${project.name}`)}`}
+                className="w-full mt-3 px-6 py-3.5 rounded-full font-semibold bg-white/10 text-white hover:bg-white/20 transition-colors flex items-center justify-center gap-2"
+              >
+                <Mail className="w-4 h-4" /> Email the builder
+              </a>
+            )}
+            {!brochureUrl && !project.contactPhone && !project.contactEmail && (
+              <Button variant="accent" className="w-full mt-6" onClick={() => navigate('/listings', { state: { filters: { city: project.city, locality: project.locality } } })}>
+                See listings in {project.locality || project.city}
+              </Button>
+            )}
           </div>
 
           <div className="rounded-[2rem] border border-slate-100 p-6">
@@ -225,12 +256,6 @@ const ProjectDetailsPage = () => {
                 {formatCurrency(project.pricePerSqft?.min)} - {formatCurrency(project.pricePerSqft?.max)}
               </span>
             </div>
-            <div className="flex items-center justify-between text-sm font-semibold text-slate-600 mt-3">
-              <span>Ratings</span>
-              <span className="flex items-center gap-1 text-emerald-600">
-                <Star className="w-4 h-4" fill="currentColor" /> 4.6
-              </span>
-            </div>
           </div>
         </div>
       </div>
@@ -245,7 +270,7 @@ const ProjectDetailsPage = () => {
           </div>
         </div>
       )}
-    </motion.div>
+    </Motion.div>
   )
 }
 

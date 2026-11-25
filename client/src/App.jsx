@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import Navbar from './components/layout/Navbar';
@@ -20,6 +20,9 @@ import InfoPage from './pages/InfoPage';
 import ContactPage from './pages/ContactPage';
 import NotFoundPage from './pages/NotFoundPage';
 import ProtectedRoute from './components/ProtectedRoute';
+
+// The 3D map pulls in MapLibre (~1 MB), so it only downloads when someone opens it
+const Societies3DPage = lazy(() => import('./pages/Societies3DPage'));
 import { useAuth } from './hooks/useAuth';
 import useGeoLocation from './hooks/useGeoLocation';
 import { propertyService } from './services/propertyService';
@@ -510,6 +513,14 @@ export default function App() {
           <ProtectedRoute>
             <PropertyFormPage />
           </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/explore-3d"
+        element={
+          <Suspense fallback={<div className="fixed inset-0 bg-[#050506]" />}>
+            <Societies3DPage />
+          </Suspense>
         }
       />
       <Route path="/property/:propertyId" element={<MainLayout />} />

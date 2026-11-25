@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Home, Menu, X, ChevronDown, LogOut, LayoutDashboard, UserCog, Heart, ListChecks } from 'lucide-react';
+import { Home, Menu, X, ChevronDown, LogOut, LayoutDashboard, UserCog, Heart, ListChecks, Box } from 'lucide-react';
 import Button from '../ui/Button';
 import { useAuth } from '../../hooks/useAuth';
 
@@ -202,6 +202,15 @@ const Navbar = ({ onViewChange, currentView, onPostProperty }) => {
               </div>
             )}
 
+            <button
+              type="button"
+              onClick={() => navigate('/explore-3d')}
+              title="Watch all the societies in 3D"
+              className="flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-900 shadow-sm transition-colors hover:border-slate-900 hover:bg-slate-900 hover:text-white"
+            >
+              <Box className="w-4 h-4" />
+              View in 3D
+            </button>
             <Button variant="primary" className="!py-2.5 !px-5 !text-sm" onClick={postProperty}>Post Property</Button>
           </div>
 
@@ -223,6 +232,9 @@ const Navbar = ({ onViewChange, currentView, onPostProperty }) => {
                 {item.label}
               </button>
             ))}
+            <button onClick={() => { setMobileMenu(false); navigate('/explore-3d'); }} className={`${mobileLinkClass} flex items-center gap-2`}>
+              <Box className="w-4 h-4" /> View societies in 3D
+            </button>
             {isAuthenticated ? (
               <>
                 <button onClick={() => { setMobileMenu(false); navigate('/dashboard'); }} className={mobileLinkClass}>

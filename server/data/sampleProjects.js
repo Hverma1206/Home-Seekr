@@ -10,7 +10,7 @@ const CITY_CATALOG = [
     city: 'Gurugram',
     state: 'Haryana',
     localities: [
-      { name: 'Sector 57', lat: 28.4211, lng: 77.0722 },
+      { name: 'Sector 57', lat: 28.423, lng: 77.0782 },
       { name: 'Golf Course Road', lat: 28.4546, lng: 77.0968 },
     ],
   },

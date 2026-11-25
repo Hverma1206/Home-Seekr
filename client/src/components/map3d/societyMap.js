@@ -110,6 +110,8 @@ export const buildSocietyGeoJSON = (societies) => {
     const rnd = seeded(hashString(s.id));
     const r = siteRadius(s);
     shapes.push({ type: 'Feature', properties: { sid: s.id, role: 'site' }, geometry: { type: 'Polygon', coordinates: [circle(center, r)] } });
+    points.push({ type: 'Feature', properties: { sid: s.id, name: s.name }, geometry: { type: 'Point', coordinates: center } });
+    if (s.plot) continue; // plots: just the site outline
 
     const count = s.kind === 'area'
       ? 8
@@ -123,7 +125,6 @@ export const buildSocietyGeoJSON = (societies) => {
       const h = s.floors ? baseH : baseH * (0.8 + rnd() * 0.4);
       shapes.push({ type: 'Feature', properties: { sid: s.id, role: 'bld', h: Math.round(h) }, geometry: { type: 'Polygon', coordinates: [ring] } });
     }
-    points.push({ type: 'Feature', properties: { sid: s.id, name: s.name }, geometry: { type: 'Point', coordinates: center } });
   }
   return {
     shapes: { type: 'FeatureCollection', features: shapes },
@@ -174,6 +175,18 @@ export function createMap(container) {
   map.touchZoomRotate.disableRotation();
   map.keyboard.disableRotation();
   return map;
+}
+
+// "You are here": a Google-style blue dot with a soft halo (same as flat-finder's)
+export function showYou(map, lngLat, existing) {
+  if (existing) return existing.setLngLat(lngLat);
+  const el = document.createElement('div');
+  el.setAttribute('aria-label', 'Your location');
+  Object.assign(el.style, {
+    width: '18px', height: '18px', borderRadius: '50%', background: '#4285f4', border: '3px solid #fff',
+    boxShadow: '0 0 0 10px rgba(66, 133, 244, .28), 0 1px 4px rgba(0, 0, 0, .4)',
+  });
+  return new maplibregl.Marker({ element: el }).setLngLat(lngLat).addTo(map);
 }
 
 // Colours per base map: "match" = passes the current filters, "no" = filtered out

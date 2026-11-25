@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, Search, X, Home, Plus, Minus, Layers, MapPin, Building2, ExternalLink, ChevronUp, ChevronDown, Loader2, Box,
+  ArrowLeft, Search, X, Home, Plus, Minus, Layers, MapPin, Building2, ExternalLink, ChevronUp, ChevronDown, Loader2, Box, LocateFixed,
 } from 'lucide-react';
 import { societyService } from '../services/societyService';
 import { formatPrice } from '../services/propertyService';
 import {
-  createMap, addSocietyLayers, addBaseLayers, setBaseMode, startPulse, setStates, setFlag,
+  createMap, addSocietyLayers, addBaseLayers, setBaseMode, startPulse, setStates, setFlag, showYou,
   placeSocieties, buildSocietyGeoJSON, SOCIETY_LAYERS, BASE_MODES, BASE_MODE_LABELS,
 } from '../components/map3d/societyMap';
 
@@ -26,9 +26,12 @@ const STATUS_LABEL = { pre_launch: 'Pre-launch', ongoing: 'Under construction', 
 const money = (n) => (n ? formatPrice(String(Math.round(n))) : '');
 const rangeText = (r, suffix = '') => {
   if (!r?.count) return '';
+  if (!r.min) return 'Price on request';
   return `${r.min === r.max ? money(r.min) : `${money(r.min)} – ${money(r.max)}`}${suffix}`;
 };
 const bhkOrder = (b) => (/rk/i.test(b) ? 0.5 : parseFloat(b) || 99);
+// "3 BHK + Servant" and "3 BHK + Study" filter as "3 BHK"; the card keeps the full label
+const bhkBase = (b) => (/rk/i.test(b) ? '1 RK' : parseFloat(b) ? `${parseFloat(b)} BHK` : '');
 const isMobile = () => window.matchMedia?.('(max-width: 767px)').matches;
 const canUseWebGL = () => {
   try {
@@ -43,14 +46,14 @@ const matchesFilters = (s, { mode, bhk, query }) => {
   if (mode === 'buy' && !s.buy.count) return false;
   if (mode === 'rent' && !s.rent.count) return false;
   if (mode === 'projects' && !s.project) return false;
-  if (bhk && !s.bhks.includes(bhk)) return false;
+  if (bhk && !s.bhks.some((b) => bhkBase(b) === bhk)) return false;
   const q = query.trim().toLowerCase();
   return !q || `${s.name} ${s.locality}`.toLowerCase().includes(q);
 };
 
 const summary = (s) => [
-  s.buy.count ? `Buy from ${money(s.buy.min)}` : '',
-  s.rent.count ? `Rent from ${money(s.rent.min)}/mo` : '',
+  s.buy.count ? (s.buy.min ? `Buy from ${money(s.buy.min)}` : 'For sale · price on request') : '',
+  s.rent.count ? (s.rent.min ? `Rent from ${money(s.rent.min)}/mo` : 'For rent · price on request') : '',
   s.project?.priceMin ? `From ${money(s.project.priceMin)}` : '',
 ].filter(Boolean).join(' · ');
 
@@ -106,6 +109,7 @@ export default function Societies3DPage() {
   const prevSelectedRef = useRef(null);
   const prevHoverRef = useRef(null);
   const searchRef = useRef(null);
+  const youRef = useRef(null);
 
   const [webglOk] = useState(canUseWebGL);
   const [societies, setSocieties] = useState([]);
@@ -120,6 +124,8 @@ export default function Societies3DPage() {
   const [baseMode, setBaseModeState] = useState('night');
   const [is3d, setIs3d] = useState(true);
   const [panelOpen, setPanelOpen] = useState(true);
+  const [locating, setLocating] = useState(false);
+  const [notice, setNotice] = useState('');
 
   // Layers are added by the effect below in the same commit, before the effects that colour them run
   const layersReady = mapReady && loadState === 'ready';
@@ -127,7 +133,7 @@ export default function Societies3DPage() {
   const selected = selectedId ? byId.get(selectedId) || null : null;
   const hovered = hover ? byId.get(hover.sid) : null;
   const matches = useMemo(() => societies.filter((s) => matchesFilters(s, { mode, bhk, query })), [societies, mode, bhk, query]);
-  const bhkOptions = useMemo(() => [...new Set(societies.flatMap((s) => s.bhks))].sort((a, b) => bhkOrder(a) - bhkOrder(b)), [societies]);
+  const bhkOptions = useMemo(() => [...new Set(societies.flatMap((s) => s.bhks.map(bhkBase)).filter(Boolean))].sort((a, b) => bhkOrder(a) - bhkOrder(b)), [societies]);
   const totals = useMemo(() => societies.reduce((t, s) => ({ buy: t.buy + s.buy.count, rent: t.rent + s.rent.count }), { buy: 0, rent: 0 }), [societies]);
 
   // Societies from our database
@@ -236,6 +242,26 @@ export default function Societies3DPage() {
     });
   }, [layersReady, selected]);
 
+  // If the visitor already allowed location (the home page asks), show the blue dot without moving the camera
+  useEffect(() => {
+    if (!mapReady || !navigator.geolocation || !navigator.permissions?.query) return undefined;
+    let active = true;
+    navigator.permissions.query({ name: 'geolocation' }).then((status) => {
+      if (!active || status.state !== 'granted') return;
+      navigator.geolocation.getCurrentPosition((p) => {
+        if (active && mapRef.current) youRef.current = showYou(mapRef.current, [p.coords.longitude, p.coords.latitude], youRef.current);
+      }, () => {}, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [mapReady]);
+
+  // Short messages (e.g. location denied) fade on their own
+  useEffect(() => {
+    if (!notice) return undefined;
+    const timer = setTimeout(() => setNotice(''), 4000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
   // "/" jumps to search, Escape closes the society card
   useEffect(() => {
     const onKey = (e) => {
@@ -255,6 +281,25 @@ export default function Societies3DPage() {
   const goHome = () => {
     setSelectedId(null);
     mapRef.current?.flyTo({ ...overviewRef.current, pitch: is3d ? PITCH_3D : 0, padding: NO_PADDING, duration: 2000 });
+  };
+  const locateMe = () => {
+    if (!navigator.geolocation) {
+      setNotice('Your browser cannot share your location.');
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition((p) => {
+      setLocating(false);
+      const map = mapRef.current;
+      if (!map) return;
+      const at = [p.coords.longitude, p.coords.latitude];
+      youRef.current = showYou(map, at, youRef.current);
+      setSelectedId(null);
+      map.flyTo({ center: at, zoom: 15, pitch: is3d ? PITCH_3D : 0, bearing: 0, padding: NO_PADDING, duration: 2000 });
+    }, (error) => {
+      setLocating(false);
+      setNotice(error.code === 1 ? 'Location permission is off. Allow it in your browser to see where you are.' : 'Could not get your location.');
+    }, { enableHighAccuracy: true, timeout: 10000 });
   };
   const toggleTilt = () => {
     mapRef.current?.easeTo({ pitch: is3d ? 0 : PITCH_3D, duration: 800 });
@@ -318,6 +363,12 @@ export default function Societies3DPage() {
               <button type="button" onClick={retry} className="font-semibold text-amber-200 hover:underline">Retry</button>
             </>
           )}
+        </div>
+      )}
+
+      {notice && (
+        <div role="status" className="absolute left-1/2 bottom-24 md:bottom-28 z-30 -translate-x-1/2 max-w-[90vw] rounded-full bg-[#0c0c0f]/90 border border-white/10 px-4 py-2.5 text-sm shadow-2xl backdrop-blur">
+          {notice}
         </div>
       )}
 
@@ -563,7 +614,7 @@ export default function Societies3DPage() {
                             <p className="text-[11px] text-slate-400 truncate">{[l.bhk, l.area, l.furnishing].filter(Boolean).join(' · ')}</p>
                           </div>
                           <div className="text-right shrink-0">
-                            <p className="text-xs font-semibold text-amber-100">{money(l.price)}{rental ? '/mo' : ''}</p>
+                            <p className="text-xs font-semibold text-amber-100">{l.price ? `${money(l.price)}${rental ? '/mo' : ''}` : 'On request'}</p>
                             <p className="text-[10px] text-slate-500">{rental ? 'Rent' : 'Buy'}</p>
                           </div>
                         </button>
@@ -611,6 +662,9 @@ export default function Societies3DPage() {
         <div className="absolute z-10 right-3 top-3 flex flex-col gap-2 md:top-auto md:right-4 md:bottom-10 md:flex-row">
           <ControlButton label={`Map style: ${BASE_MODE_LABELS[baseMode]}`} onClick={cycleBase} disabled={!layersReady}>
             <Layers className="w-4 h-4" /><span className="hidden md:inline">{BASE_MODE_LABELS[baseMode]}</span>
+          </ControlButton>
+          <ControlButton label="Show my location" onClick={locateMe} disabled={!mapReady || locating}>
+            {locating ? <Loader2 className="w-4 h-4 animate-spin text-amber-200" /> : <LocateFixed className="w-4 h-4" />}
           </ControlButton>
           <ControlButton label="Show all societies" onClick={goHome} disabled={!layersReady}>
             <Home className="w-4 h-4" />

@@ -16,9 +16,13 @@ const hasCoords = (doc) => {
 	return Number.isFinite(lng) && Number.isFinite(lat) && (lng !== 0 || lat !== 0)
 }
 
-const range = (values) => (values.length ? { count: values.length, min: Math.min(...values), max: Math.max(...values) } : { count: 0, min: null, max: null })
+// count = every listing, min/max = only those with a price ("price on request" listings still count as for sale)
+const range = (listings, price) => {
+	const values = listings.map(price).filter(Boolean)
+	return { count: listings.length, min: values.length ? Math.min(...values) : null, max: values.length ? Math.max(...values) : null }
+}
 
-const listingArea = (p) => (p.areaSqFt ? `${p.areaSqFt} sq.ft` : p.area || (p.plotArea ? `${p.plotArea} ${p.plotAreaUnit || ''}`.trim() : ''))
+const listingArea = (p) => p.area || (p.areaSqFt ? `${p.areaSqFt} sq.ft` : p.plotArea ? `${p.plotArea} ${p.plotAreaUnit || ''}`.trim() : '')
 
 // One map pin per society: listings grouped by society name (or by locality when a home is not in a society),
 // with projects in the same city merged in by name. Pure, so it can be tested without a database.
@@ -65,9 +69,11 @@ export const groupSocieties = (properties = [], projects = []) => {
 			lat: +lat.toFixed(6),
 			// Apartments and projects are drawn as towers; builder floors and villas as low blocks
 			tall: Boolean(project) || items.some((p) => /apartment|flat|penthouse|studio/i.test(p.selectedType || '')),
+			// Only plots: drawn as a site outline with no buildings
+			plot: !project && items.length > 0 && items.every((p) => /plot|land/i.test(p.selectedType || '')),
 			floors: Math.max(projectFloors, ...floors, 0) || null,
-			buy: range(items.filter((p) => !isRental(p)).map(price).filter(Boolean)),
-			rent: range(items.filter(isRental).map(price).filter(Boolean)),
+			buy: range(items.filter((p) => !isRental(p)), price),
+			rent: range(items.filter(isRental), price),
 			bhks: [...bhks].sort(),
 			types: [...new Set(items.map((p) => p.selectedType).filter(Boolean))],
 			amenities: [...new Set([...items.flatMap((p) => p.amenities || []), ...(project?.amenities || [])])].slice(0, 12),
@@ -79,7 +85,7 @@ export const groupSocieties = (properties = [], projects = []) => {
 				price: price(p),
 				bhk: p.bhk || '',
 				area: listingArea(p),
-				furnishing: p.furnishingType || '',
+				furnishing: /plot|land/i.test(p.selectedType || '') ? '' : p.furnishingType || '',
 				image: p.image || p.images?.[0] || '',
 			})),
 			project: project ? {

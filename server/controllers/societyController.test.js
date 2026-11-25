@@ -43,6 +43,16 @@ test('homes outside a society group by locality; listings without coordinates ar
 	assert.equal(societies[0].tall, false)
 })
 
+test('a plot-only society is flagged, and price-on-request listings count without breaking the price range', () => {
+	const [s] = groupSocieties([
+		listing({ societyName: 'BPTP Amstoria', selectedType: 'Plot / Land', price: 'Price on request', priceNumeric: null }),
+		listing({ societyName: 'BPTP Amstoria', selectedType: 'Plot / Land', price: '30000000', priceNumeric: 30000000 }),
+	])
+
+	assert.equal(s.plot, true)
+	assert.deepEqual(s.buy, { count: 2, min: 30000000, max: 30000000 })
+})
+
 test('a project with the same name as a society merges into it; others get their own pin', () => {
 	const projects = [
 		{ _id: 'p1', name: 'Godrej Oasis', city: 'Gurugram', locality: 'Sector 88A', geo: { coordinates: [76.95, 28.42] }, status: 'ongoing', priceRange: { min: 1e7, max: 2e7 }, configurations: [{ type: '4 BHK' }] },

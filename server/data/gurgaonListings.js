@@ -2,7 +2,9 @@
 // collected on 2026-11-23 from public listing pages. No phone numbers, personal names, photos or description text
 // were copied. Listings may since have been sold or rented. Remove before launch:
 //   node utils/importGurgaonListings.js --remove
-// Pincodes and coordinates are approximate per sector.
+// Pincodes are approximate per sector; pins come from data/gurgaonSocietyLocations.js (verified per society).
+
+import { locate } from './gurgaonSocietyLocations.js'
 
 export const IMPORT_POSTER_PHONE = '9800000003' // 9800000001 = sample listings, 9800000002 = sample projects
 
@@ -15,7 +17,7 @@ const NB_BUY = 'https://www.nobroker.in/property/buy'
 const NB_RENT = 'https://www.nobroker.in/property'
 
 // sector -> [lat, lng, pincode] (approximate)
-const SECTORS = {
+export const SECTORS = {
 	'Sector 10A': [28.4495, 76.999, '122001'],
 	'Sector 14': [28.471, 77.045, '122001'],
 	'Sector 15': [28.458, 77.041, '122001'],
@@ -110,14 +112,14 @@ const ROWS = [
 	['rent', 'apartment', 2, 'Godrej Oasis', 'Sector 88A', 33000, 1307, 'superBuiltup', '2', '20', 'semi-furnished', '', 'broker', null, SY, SY_RENT],
 ]
 
-const KINDS = {
+export const KINDS = {
 	apartment: { type: 'Apartment', selectedType: 'Flat / Apartment' },
 	builderFloor: { type: 'Builder Floor', selectedType: 'Independent / Builder Floor' },
 	villa: { type: 'Villa', selectedType: 'Independent House / Villa' },
 	house: { type: 'Independent House', selectedType: 'Independent House / Villa' },
 }
 
-const IMAGES = {
+export const IMAGES = {
 	apartment: [
 		'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1200&q=80',
 		'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=1200&q=80',
@@ -143,7 +145,8 @@ export const buildGurgaonListings = (postedBy) =>
 			lookingTo, kind, bhk, society, sector, price, areaSqFt, areaBasis,
 			floor, totalFloors, furnishing, availability, postedByType, maintenance, sourceName, sourceUrl,
 		] = row
-		const [lat, lng, pincode] = SECTORS[sector]
+		const [sectorLat, sectorLng, pincode] = SECTORS[sector]
+		const [lat, lng] = locate(society, sector, [sectorLat, sectorLng])
 		const { type, selectedType } = KINDS[kind]
 		const bhkLabel = bhk === 0 ? '1 RK' : `${bhk} BHK`
 		const where = society ? `${society}, ${sector}` : sector

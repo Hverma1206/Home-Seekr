@@ -1,5 +1,16 @@
+import { readFileSync } from 'node:fs'
 import Property from '../models/Property.js'
 import Project from '../models/Project.js'
+
+// Real building outlines around each society, from OpenStreetMap (made by utils/fetchSocietyBuildings.js).
+// Missing file = every society keeps its illustrative towers.
+const BUILDINGS = (() => {
+	try {
+		return JSON.parse(readFileSync(new URL('../data/gurgaonBuildings.json', import.meta.url), 'utf8'))
+	} catch {
+		return {}
+	}
+})()
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
@@ -82,6 +93,7 @@ export const groupSocieties = (properties = [], projects = []) => {
 				id: String(p._id),
 				title: p.title || `${p.bhk || ''} ${p.selectedType || 'Home'}`.trim(),
 				lookingTo: p.lookingTo,
+				type: p.selectedType || '',
 				price: price(p),
 				bhk: p.bhk || '',
 				area: listingArea(p),
@@ -105,20 +117,22 @@ export const groupSocieties = (properties = [], projects = []) => {
 
 const LISTING_FIELDS = 'societyName locality city geo lookingTo selectedType price priceNumeric bhk areaSqFt area plotArea plotAreaUnit totalFloors furnishingType amenities image images title'
 
+export const findSocieties = async (city) => {
+	const cityMatch = new RegExp(`^${escapeRegExp(city)}$`, 'i')
+	const withCoords = { 'geo.coordinates.1': { $exists: true } }
+	// shortcut: groups in memory and caps at 5,000 listings; move to a $group aggregation if a city outgrows that
+	const [properties, projects] = await Promise.all([
+		Property.find({ status: 'active', city: cityMatch, ...withCoords }).select(LISTING_FIELDS).sort({ createdAt: -1 }).limit(5000).lean(),
+		Project.find({ isActive: true, city: cityMatch, ...withCoords }).lean(),
+	])
+	return groupSocieties(properties, projects)
+}
+
 // GET /api/societies?city=Gurugram — every society with listings or a project in the city, ready for the 3D map
 export const getSocieties = async (req, res, next) => {
 	try {
 		const city = String(req.query.city || 'Gurugram').trim().slice(0, 60)
-		const cityMatch = new RegExp(`^${escapeRegExp(city)}$`, 'i')
-		const withCoords = { 'geo.coordinates.1': { $exists: true } }
-
-		// shortcut: groups in memory and caps at 5,000 listings; move to a $group aggregation if a city outgrows that
-		const [properties, projects] = await Promise.all([
-			Property.find({ status: 'active', city: cityMatch, ...withCoords }).select(LISTING_FIELDS).sort({ createdAt: -1 }).limit(5000).lean(),
-			Project.find({ isActive: true, city: cityMatch, ...withCoords }).lean(),
-		])
-
-		const societies = groupSocieties(properties, projects)
+		const societies = (await findSocieties(city)).map((s) => (BUILDINGS[s.id] ? { ...s, buildings: BUILDINGS[s.id] } : s))
 		res.status(200).json({ city, total: societies.length, societies })
 	} catch (error) {
 		next(error)

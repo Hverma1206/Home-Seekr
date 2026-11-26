@@ -14,7 +14,9 @@ export const SOCIETY_LOCATIONS = {
 	"Birla Avik": [28.392013, 77.089813], // ff "Birla Navya Avik Phase 1"
 	"BPTP Amstoria": [28.474966, 76.976697], // ff "BPTP Amstoria"
 	"BPTP Astaire Garden": [28.397495, 77.022815], // ff "Countrywide The Oval At Astaire Garden"
-	"BPTP Spacio": [28.446052, 76.977286], // ff "BPTP Spacio"
+	// MagicBricks' pin (28.446052, 76.977286) is a placeholder shared by three projects and lands in Garauli Khurd village;
+	// houssed.com and Square Yards (twice) agree on the BPTP campus OpenStreetMap names "Park Serene"
+	"BPTP Spacio": [28.453973, 76.974198],
 	"BPTP Terra": [28.456365, 76.97299], // ff "BPTP Terra"
 	"Central Park Flower Valley": [28.28253, 77.067993], // ff "Central Park Flower Valley"
 	"CHD Avenue 71": [28.406954, 77.024929], // ff "CHD Avenue 71"

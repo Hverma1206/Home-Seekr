@@ -1,12 +1,8 @@
 import jwt from 'jsonwebtoken'
-import { normalizeIndianMobileNumber, isDevOtpMode, dispatchOTP, isOTPValid } from '../utils/sms.js'
+import { normalizeIndianMobileNumber, verifyFirebasePhoneToken } from '../utils/phone.js'
 import User from '../models/User.js'
 import Property from '../models/Property.js'
 import Project from '../models/Project.js'
-
-const OTP_EXPIRY_MINUTES = 10
-const OTP_RESEND_DELAY_SECONDS = 30
-const MAX_OTP_ATTEMPTS = 5
 
 export const buildUserResponse = (user) => ({
 	id: user._id,
@@ -174,258 +170,70 @@ const generateToken = (id) => {
 const SIGNUP_ROLES = ['buyer', 'owner', 'broker', 'builder']
 
 /**
- * @route   POST /api/auth/send-otp
- * @desc    Send OTP to phone number during signup
+ * @route   POST /api/auth/phone-login
+ * @desc    Log in or sign up with a Firebase phone-auth ID token sent as "Authorization: Bearer <idToken>".
+ *          Optional body { firstName, lastName, role, companyName } fills in a profile that has no name yet,
+ *          so a new number can finish signup by calling this again with the same ID token.
  * @access  Public
  */
-export const sendOTP = async (req, res) => {
+export const phoneLogin = async (req, res) => {
 	try {
-		const { phoneNumber } = req.body
-
-		// Validation
+		const authHeader = req.headers.authorization || ''
+		const phoneNumber = await verifyFirebasePhoneToken(
+			authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '',
+		)
 		if (!phoneNumber) {
-			return res.status(400).json({
+			return res.status(401).json({
 				success: false,
-				message: 'Phone number is required',
+				message: 'Phone verification failed or expired. Please request a new OTP.',
 			})
 		}
 
-		const phoneDetails = normalizeIndianMobileNumber(String(phoneNumber))
-		if (!phoneDetails.isValid) {
-			return res.status(400).json({
-				success: false,
-				message: 'Invalid Indian mobile number format',
-			})
-		}
-
-		// Find existing user by phone
-		const existingUser = await User.findOne({
-			phoneNumber: phoneDetails.nationalNumber,
-		})
-
-		// Check if OTP was recently sent (rate limiting)
-		if (existingUser && existingUser.otpSentAt) {
-			const timeSinceLastOTP = (Date.now() - existingUser.otpSentAt) / 1000
-			if (timeSinceLastOTP < OTP_RESEND_DELAY_SECONDS) {
-				const remainingTime = Math.ceil(
-					OTP_RESEND_DELAY_SECONDS - timeSinceLastOTP,
-				)
-				return res.status(429).json({
-					success: false,
-					message: `Please wait ${remainingTime} seconds before requesting a new OTP`,
-				})
-			}
-		}
-
-		if (existingUser?.isBanned) {
+		let user = await User.findOne({ phoneNumber })
+		if (user?.isBanned) {
 			return res.status(403).json({
 				success: false,
 				message: 'This account has been suspended. Contact support.',
 			})
 		}
 
-		const sessionId = await dispatchOTP(phoneDetails)
-		if (!sessionId) {
-			return res.status(502).json({
-				success: false,
-				message: 'Failed to send OTP. Please try again.',
-			})
-		}
-
-		// Only the OTP session is written here: profile fields are set after the number is proven in verify-otp,
-		// otherwise anyone could rename someone else's account by requesting an OTP for their number
-		await User.findOneAndUpdate(
-			{ phoneNumber: phoneDetails.nationalNumber },
-			{
-				phoneNumber: phoneDetails.nationalNumber,
-				otpSessionId: sessionId,
-				otpSentAt: new Date(),
-				otpAttempts: 0,
-			},
-			{
-				upsert: true,
-				returnDocument: 'after',
-				setDefaultsOnInsert: true,
-			},
-		)
-
-		res.status(200).json({
-			success: true,
-			message: 'OTP sent successfully',
-			data: {
-				phoneNumber: phoneDetails.nationalNumber,
-				// A number that never finished verification is still a signup: ask for name and role
-				isNewUser: !existingUser?.isPhoneVerified,
-				expiresIn: OTP_EXPIRY_MINUTES,
-				devMode: isDevOtpMode(),
-			},
-		})
-	} catch (error) {
-		console.error('Send OTP Error:', error)
-		res.status(500).json({
-			success: false,
-			message: error.message || 'Failed to send OTP',
-		})
-	}
-}
-
-/**
- * @route   POST /api/auth/verify-otp
- * @desc    Verify OTP and activate account
- * @access  Public
- */
-export const verifyOTP = async (req, res) => {
-	try {
-		const { phoneNumber, otp, email, password, firstName, lastName, role, companyName } = req.body
-
-		// Validation
-		if (!phoneNumber || !otp) {
-			return res.status(400).json({
-				success: false,
-				message: 'Phone number and OTP are required',
-			})
-		}
-
-		const phoneDetails = normalizeIndianMobileNumber(String(phoneNumber))
-		if (!phoneDetails.isValid) {
-			return res.status(400).json({
-				success: false,
-				message: 'Invalid Indian mobile number format',
-			})
-		}
-
-		const cleanOTP = otp.toString().trim()
-		if (!/^\d{6}$/.test(cleanOTP)) {
-			return res.status(400).json({
-				success: false,
-				message: 'OTP must be a 6-digit number',
-			})
-		}
-
-		if (password && password.length < 6) {
-			return res.status(400).json({
-				success: false,
-				message: 'Password must be at least 6 characters',
-			})
-		}
-
-		// Find user
-		const user = await User.findOne({
-			phoneNumber: phoneDetails.nationalNumber,
-		}).select(
-			'+password',
-		)
-
-		if (!user) {
-			return res.status(404).json({
-				success: false,
-				message: 'User not found. Please signup first.',
-			})
-		}
-
-		// Check OTP attempts
-		if (user.otpAttempts >= MAX_OTP_ATTEMPTS) {
-			return res.status(429).json({
-				success: false,
-				message: 'Maximum OTP attempts exceeded. Please request a new OTP.',
-			})
-		}
-
-		// Check if OTP has expired
-		if (!user.otpSentAt) {
-			return res.status(400).json({
-				success: false,
-				message: 'No OTP found. Please request OTP first.',
-			})
-		}
-
-		const otpAge = (Date.now() - user.otpSentAt) / 1000 / 60 // in minutes
-		if (otpAge > OTP_EXPIRY_MINUTES) {
-			return res.status(400).json({
-				success: false,
-				message: 'OTP has expired. Please request a new OTP.',
-			})
-		}
-
-		// Get session ID
-		const sessionId = user.otpSessionId
-		if (!sessionId) {
-			return res.status(400).json({
-				success: false,
-				message: 'Invalid OTP session. Please request OTP again.',
-			})
-		}
-
-		if (user.isBanned) {
-			return res.status(403).json({
-				success: false,
-				message: 'This account has been suspended. Contact support.',
-			})
-		}
-
-		if (!(await isOTPValid(sessionId, cleanOTP))) {
-			// Increment failed attempts
-			user.otpAttempts += 1
-			user.otpLastAttemptAt = new Date()
-			await user.save()
-
-			const remainingAttempts = MAX_OTP_ATTEMPTS - user.otpAttempts
-			return res.status(400).json({
-				success: false,
-				message: `Invalid OTP. ${remainingAttempts} attempts remaining.`,
-			})
-		}
-
-		// OTP verified successfully - update user
-		const isNewUser = !user.isPhoneVerified
+		// A number that never finished verification is still a signup
+		const isNewUser = !user?.isPhoneVerified
+		user ||= new User({ phoneNumber })
 		user.isPhoneVerified = true
-		user.otpSessionId = null
-		user.otpSentAt = null
-		user.otpAttempts = 0
 		user.isActive = true
 
 		// Signup details are taken once; a returning user logging in keeps their saved profile
-		if (isNewUser || !user.firstName) {
-			if (cleanString(firstName)) user.firstName = cleanString(firstName)
-			if (cleanString(lastName)) user.lastName = cleanString(lastName)
-		}
-		if (isNewUser && SIGNUP_ROLES.includes(role)) {
-			user.role = role
+		const { firstName, lastName, role, companyName } = req.body || {}
+		if (!user.firstName && cleanString(firstName)) {
+			user.firstName = cleanString(firstName)
+			user.lastName = cleanString(lastName) || ''
+			if (SIGNUP_ROLES.includes(role)) user.role = role
 		}
 		if (cleanString(companyName) && !user.companyName) {
 			user.companyName = cleanString(companyName).slice(0, 120)
 		}
-		const normalizedEmail = normalizeEmail(email)
-		if (normalizedEmail && !user.email) {
-			const emailTaken = await User.exists({ email: normalizedEmail, _id: { $ne: user._id } })
-			if (!emailTaken) {
-				user.email = normalizedEmail
-			}
-		}
-		if (password) {
-			user.password = password
-		}
 
 		await user.save()
 
-		// Generate JWT token
-		const token = generateToken(user._id)
-		const responseUser = buildUserResponse(user)
-
 		res.status(200).json({
 			success: true,
-			message: 'Phone verified successfully',
+			message: 'Logged in',
 			data: {
-				token,
-				user: responseUser,
+				token: generateToken(user._id),
+				user: buildUserResponse(user),
 				isNewUser,
 			},
 		})
 	} catch (error) {
-		console.error('Verify OTP Error:', error)
+		// Two first logins for the same number at once: the other request created the account
+		if (error.code === 11000) {
+			return res.status(409).json({ success: false, message: 'Please try logging in again.' })
+		}
+		console.error('Phone login error:', error)
 		res.status(500).json({
 			success: false,
-			message: error.message || 'Failed to verify OTP',
+			message: 'Failed to log in. Please try again.',
 		})
 	}
 }
@@ -672,96 +480,6 @@ export const updateProfile = async (req, res) => {
 			message: isValidation
 				? Object.values(error.errors).map((item) => item.message).join(', ')
 				: error.message || 'Failed to update profile',
-		})
-	}
-}
-
-/**
- * @route   POST /api/auth/resend-otp
- * @desc    Resend OTP to phone number
- * @access  Public
- */
-export const resendOTP = async (req, res) => {
-	try {
-		const { phoneNumber } = req.body
-
-		// Validation
-		if (!phoneNumber) {
-			return res.status(400).json({
-				success: false,
-				message: 'Phone number is required',
-			})
-		}
-
-		const phoneDetails = normalizeIndianMobileNumber(String(phoneNumber))
-		if (!phoneDetails.isValid) {
-			return res.status(400).json({
-				success: false,
-				message: 'Invalid Indian mobile number format',
-			})
-		}
-
-		// Find user
-		const user = await User.findOne({
-			phoneNumber: phoneDetails.nationalNumber,
-		})
-
-		if (!user) {
-			return res.status(404).json({
-				success: false,
-				message: 'User not found',
-			})
-		}
-
-		// Login and signup share this flow, so verified (returning) users must be able to resend too
-		if (user.isBanned) {
-			return res.status(403).json({
-				success: false,
-				message: 'This account has been suspended. Contact support.',
-			})
-		}
-
-		// Check resend delay
-		if (user.otpSentAt) {
-			const timeSinceLastOTP = (Date.now() - user.otpSentAt) / 1000
-			if (timeSinceLastOTP < OTP_RESEND_DELAY_SECONDS) {
-				const remainingTime = Math.ceil(
-					OTP_RESEND_DELAY_SECONDS - timeSinceLastOTP,
-				)
-				return res.status(429).json({
-					success: false,
-					message: `Please wait ${remainingTime} seconds before requesting a new OTP`,
-				})
-			}
-		}
-
-		const sessionId = await dispatchOTP(phoneDetails)
-		if (!sessionId) {
-			return res.status(502).json({
-				success: false,
-				message: 'Failed to send OTP. Please try again.',
-			})
-		}
-
-		// Update user with new OTP session
-		user.otpSessionId = sessionId
-		user.otpSentAt = new Date()
-		user.otpAttempts = 0 // Reset attempts on resend
-		await user.save()
-
-		res.status(200).json({
-			success: true,
-			message: 'OTP resent successfully',
-			data: {
-				phoneNumber: phoneDetails.nationalNumber,
-				expiresIn: OTP_EXPIRY_MINUTES,
-			},
-		})
-	} catch (error) {
-		console.error('Resend OTP Error:', error)
-		res.status(500).json({
-			success: false,
-			message: error.message || 'Failed to resend OTP',
 		})
 	}
 }

@@ -1,15 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion as Motion } from 'framer-motion';
-import { Phone, User, ArrowLeft, CheckCircle, Shield, Building2, Mail, Lock } from 'lucide-react';
+import { Phone, User, CheckCircle, Shield, Building2, Mail, Lock } from 'lucide-react';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
-import OTPInput from '../components/ui/OTPInput';
 import VerifyContact from '../components/VerifyContact';
+import PhoneLogin from '../components/PhoneLogin';
 import { authService } from '../services/authService';
 import { useAuth } from '../hooks/useAuth';
-
-const RESEND_SECONDS = 30;
 
 const ROLE_OPTIONS = [
   { value: 'buyer', label: 'Buyer / Tenant', hint: 'Looking for a property' },
@@ -36,36 +34,26 @@ const LoginSignupPage = ({ onLoginSuccess }) => {
   const { login, isAuthenticated, updateUser } = useAuth();
   const redirectTo = location.state?.from && location.state.from !== '/login' ? location.state.from : '/';
 
-  const [step, setStep] = useState('phone'); // 'phone' | 'otp' | 'verify-email' | 'verify-phone' | 'success'
+  const [step, setStep] = useState('phone'); // 'phone' | 'details' | 'verify-email' | 'verify-phone' | 'success'
   // TEMPORARY: email + password login alongside OTP, until the SMS provider is integrated
   const [method, setMethod] = useState('otp'); // 'otp' | 'email'
   const [emailMode, setEmailMode] = useState('login'); // 'login' | 'signup'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [mobile, setMobile] = useState('');
-  const [otp, setOtp] = useState('');
-  const [isNewUser, setIsNewUser] = useState(false);
-  const [devMode, setDevMode] = useState(false);
+  // Firebase ID token of a just-verified new number, reused to save its name / role
+  const [phoneIdToken, setPhoneIdToken] = useState('');
   const [name, setName] = useState('');
   const [role, setRole] = useState('buyer');
   const [companyName, setCompanyName] = useState('');
   const [welcomeName, setWelcomeName] = useState('');
   // Account just created by email signup, while its email and phone get verified
   const [verifyUser, setVerifyUser] = useState(null);
-  const [resendTimer, setResendTimer] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [info, setInfo] = useState('');
-
-  useEffect(() => {
-    if (resendTimer > 0) {
-      const t = setTimeout(() => setResendTimer((s) => s - 1), 1000);
-      return () => clearTimeout(t);
-    }
-  }, [resendTimer]);
 
   // Someone who is already logged in has nothing to do here
-  if (isAuthenticated && !['success', 'verify-email', 'verify-phone'].includes(step)) {
+  if (isAuthenticated && !['success', 'details', 'verify-email', 'verify-phone'].includes(step)) {
     return <Navigate to={redirectTo} replace />;
   }
 
@@ -125,7 +113,6 @@ const LoginSignupPage = ({ onLoginSuccess }) => {
     }
 
     setError('');
-    setInfo('');
     setLoading(true);
     try {
       const response = isSignup
@@ -157,83 +144,37 @@ const LoginSignupPage = ({ onLoginSuccess }) => {
     setMethod(nextMethod);
     setStep('phone');
     setError('');
-    setInfo('');
-    setOtp('');
     setPassword('');
   };
 
-  const handleSendOTP = async () => {
-    if (!/^[6-9]\d{9}$/.test(mobile)) {
-      setError('Please enter a valid 10-digit Indian mobile number');
+  // PhoneLogin has already saved the session; a number without a name still has to finish signup
+  const handlePhoneLogin = ({ user }, idToken) => {
+    if (user?.firstName) {
+      setWelcomeName(user.firstName);
+      finish();
+    } else {
+      setPhoneIdToken(idToken);
+      setStep('details');
+    }
+  };
+
+  const handleSaveDetails = async () => {
+    const detailsError = validateSignupDetails();
+    if (detailsError) {
+      setError(detailsError);
       return;
     }
     setError('');
-    setInfo('');
     setLoading(true);
     try {
-      const response = await authService.sendOTP(mobile);
-      const data = response.data?.data || {};
-      setIsNewUser(Boolean(data.isNewUser));
-      setDevMode(Boolean(data.devMode));
-      setOtp('');
-      setStep('otp');
-      setResendTimer(RESEND_SECONDS);
+      const details = buildSignupDetails();
+      const response = await authService.phoneLogin(phoneIdToken, details);
+      completeLogin(response.data.data, details.firstName);
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to send OTP. Please try again.');
+      setError(err.response?.data?.message || 'Failed to save your details. Please try again.');
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleVerifyOTP = async () => {
-    if (otp.length < 6) {
-      setError('Please enter the complete 6-digit OTP');
-      return;
-    }
-    if (isNewUser) {
-      const detailsError = validateSignupDetails();
-      if (detailsError) {
-        setError(detailsError);
-        return;
-      }
-    }
-
-    setError('');
-    setInfo('');
-    setLoading(true);
-    try {
-      const details = isNewUser ? buildSignupDetails() : {};
-      const response = await authService.verifyOTP({ phoneNumber: mobile, otp, ...details });
-      completeLogin(response.data.data, details.firstName || '');
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to verify OTP. Please try again.');
-      setOtp('');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleResendOTP = async () => {
-    if (resendTimer > 0 || loading) return;
-    setError('');
-    setLoading(true);
-    try {
-      await authService.resendOTP(mobile);
-      setOtp('');
-      setResendTimer(RESEND_SECONDS);
-      setInfo('A new OTP has been sent.');
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to resend OTP. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const resetToPhone = () => {
-    setStep('phone');
-    setError('');
-    setInfo('');
-    setOtp('');
   };
 
   const errorLine = error && (
@@ -434,32 +375,12 @@ const LoginSignupPage = ({ onLoginSuccess }) => {
           >
             <AnimatePresence mode="wait">
 
-              {/* Step 1 — Mobile */}
+              {/* Step 1 — Mobile + OTP (Firebase Phone Auth) */}
               {step === 'phone' && method === 'otp' && (
-                <Motion.form
-                  key="phone"
-                  {...stepMotion}
-                  className="space-y-6"
-                  onSubmit={(e) => { e.preventDefault(); handleSendOTP(); }}
-                >
+                <Motion.div key="phone" {...stepMotion} className="space-y-6">
                   {methodTabs}
 
-                  <div>
-                    <h3 className="text-2xl font-black text-slate-900 tracking-tighter">
-                      Login or Sign up
-                    </h3>
-                    <p className="text-slate-500 text-sm mt-1">
-                      Enter your mobile number. New here? We'll set up your account after the OTP.
-                    </p>
-                  </div>
-
-                  {renderMobileField('login-mobile', true)}
-
-                  {errorLine}
-
-                  <Button type="submit" variant="primary" className="w-full !py-4" disabled={loading}>
-                    {loading ? 'Sending OTP…' : 'Send OTP →'}
-                  </Button>
+                  <PhoneLogin onSuccess={handlePhoneLogin} />
 
                   <p className="text-center text-xs text-slate-400">
                     By continuing, you agree to our{' '}
@@ -467,7 +388,7 @@ const LoginSignupPage = ({ onLoginSuccess }) => {
                     {' '}&amp;{' '}
                     <span className="text-slate-900 font-semibold underline cursor-pointer">Privacy Policy</span>
                   </p>
-                </Motion.form>
+                </Motion.div>
               )}
 
               {/* TEMPORARY: Email + password (login or signup) */}
@@ -562,63 +483,26 @@ const LoginSignupPage = ({ onLoginSuccess }) => {
                 </Motion.form>
               )}
 
-              {/* Step 2 — OTP (+ signup details for a new number) */}
-              {step === 'otp' && (
+              {/* Step 2 — a new number: name, role and company */}
+              {step === 'details' && (
                 <Motion.form
-                  key="otp"
+                  key="details"
                   {...stepMotion}
                   className="space-y-6"
-                  onSubmit={(e) => { e.preventDefault(); handleVerifyOTP(); }}
+                  onSubmit={(e) => { e.preventDefault(); handleSaveDetails(); }}
                 >
-                  <button
-                    type="button"
-                    onClick={resetToPhone}
-                    className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-900 transition-colors"
-                  >
-                    <ArrowLeft className="w-4 h-4" />
-                    Change number
-                  </button>
-
                   <div>
-                    <h3 className="text-2xl font-black text-slate-900 tracking-tighter">
-                      {isNewUser ? 'Create your account.' : 'Welcome back.'}
-                    </h3>
-                    <p className="text-slate-500 text-sm mt-1">
-                      OTP sent to <span className="font-semibold text-slate-900">+91 {mobile}</span>
-                    </p>
-                    {devMode && (
-                      <p className="text-xs text-amber-600 font-medium mt-2">
-                        Dev mode: no SMS key configured, the OTP is printed in the server console.
-                      </p>
-                    )}
+                    <h3 className="text-2xl font-black text-slate-900 tracking-tighter">Create your account.</h3>
+                    <p className="text-slate-500 text-sm mt-1">Your number is verified. Tell us a little about you.</p>
                   </div>
 
-                  <OTPInput value={otp} onChange={setOtp} length={6} disabled={loading} autoFocus />
-
-                  {isNewUser && signupFields}
+                  {signupFields}
 
                   {errorLine}
-                  {info && !error && <p className="text-emerald-600 text-xs font-medium -mt-2">{info}</p>}
 
                   <Button type="submit" variant="primary" className="w-full !py-4" disabled={loading}>
-                    {loading ? 'Verifying…' : isNewUser ? 'Verify & Create Account →' : 'Verify & Login →'}
+                    {loading ? 'Saving…' : 'Create Account →'}
                   </Button>
-
-                  <p className="text-center text-sm text-slate-500">
-                    Didn't receive it?{' '}
-                    {resendTimer > 0 ? (
-                      <span className="text-slate-400">Resend in {resendTimer}s</span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={handleResendOTP}
-                        disabled={loading}
-                        className="text-emerald-600 font-semibold hover:underline"
-                      >
-                        Resend OTP
-                      </button>
-                    )}
-                  </p>
                 </Motion.form>
               )}
 

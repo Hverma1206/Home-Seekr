@@ -26,7 +26,8 @@ dotenv.config()
 const app = express()
 const PORT = process.env.PORT
 
-app.use(cors())
+// Only our own frontend may call the API from a browser. CLIENT_ORIGIN can list several, comma-separated.
+app.use(cors({ origin: (process.env.CLIENT_ORIGIN || 'http://localhost:5173').split(',').map((o) => o.trim()) }))
 app.use(express.json())
 
 app.use('/api/health', healthRoutes)

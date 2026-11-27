@@ -1,9 +1,7 @@
 import express from 'express'
 import rateLimit from 'express-rate-limit'
 import {
-	sendOTP,
-	verifyOTP,
-	resendOTP,
+	phoneLogin,
 	getCurrentUser,
 	registerWithEmail,
 	loginWithEmail,
@@ -11,18 +9,17 @@ import {
 import {
 	sendEmailOtp,
 	verifyEmailOtp,
-	sendPhoneOtp,
-	verifyPhoneOtp,
+	verifyPhone,
 } from '../controllers/verificationController.js'
 import { protect } from '../middleware/authMiddleware.js'
 
 const router = express.Router()
 
-// Rate limiting for OTP endpoints
-const otpLimiter = rateLimit({
-	windowMs: 15 * 60 * 1000, // 15 minutes
-	max: 5, // Limit each IP to 5 requests per windowMs
-	message: { success: false, message: 'Too many OTP requests. Please try again in a few minutes.' },
+// Firebase already limits SMS sends; this caps the token exchange (a new number calls it twice: login, then signup details)
+const phoneLoginLimiter = rateLimit({
+	windowMs: 15 * 60 * 1000,
+	max: 20,
+	message: { success: false, message: 'Too many login attempts. Please try again in a few minutes.' },
 	standardHeaders: true,
 	legacyHeaders: false,
 })
@@ -36,25 +33,11 @@ const verifyLimiter = rateLimit({
 })
 
 /**
- * @route   POST /api/auth/send-otp
- * @desc    Send OTP to phone number
+ * @route   POST /api/auth/phone-login
+ * @desc    Exchange a Firebase phone-auth ID token (Authorization: Bearer) for our 7-day JWT
  * @access  Public
  */
-router.post('/send-otp', otpLimiter, sendOTP)
-
-/**
- * @route   POST /api/auth/verify-otp
- * @desc    Verify OTP and activate account
- * @access  Public
- */
-router.post('/verify-otp', verifyLimiter, verifyOTP)
-
-/**
- * @route   POST /api/auth/resend-otp
- * @desc    Resend OTP
- * @access  Public
- */
-router.post('/resend-otp', otpLimiter, resendOTP)
+router.post('/phone-login', phoneLoginLimiter, phoneLogin)
 
 // TEMPORARY email + password auth (until SMS OTP is integrated)
 const passwordLimiter = rateLimit({
@@ -90,8 +73,7 @@ const verificationSendLimiter = rateLimit({
 
 router.post('/email/send-otp', protect, verificationSendLimiter, sendEmailOtp)
 router.post('/email/verify-otp', protect, verifyLimiter, verifyEmailOtp)
-router.post('/phone/send-otp', protect, verificationSendLimiter, sendPhoneOtp)
-router.post('/phone/verify-otp', protect, verifyLimiter, verifyPhoneOtp)
+router.post('/phone/verify', protect, verifyLimiter, verifyPhone)
 
 /**
  * @route   GET /api/auth/me

@@ -2,10 +2,9 @@ import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { Mail, Phone, CheckCircle2, Loader2 } from 'lucide-react';
 import OTPInput from './ui/OTPInput';
 import { authService } from '../services/authService';
+import { usePhoneOtp, phoneOtpError as errorMessage } from '../hooks/usePhoneOtp';
 
 const RESEND_SECONDS = 30;
-
-const errorMessage = (err, fallback) => err?.response?.data?.message || fallback;
 
 // Verify the logged-in account's email address or phone number with a 6-digit code.
 // channel: 'email' | 'phone'. target: the address / number shown to the user.
@@ -23,6 +22,8 @@ const VerifyContact = ({ channel, target, autoSend = false, onVerified, onSkip, 
   const [editingNumber, setEditingNumber] = useState(isPhone && allowChangeNumber && !target);
   const [newNumber, setNewNumber] = useState('');
   const autoSent = useRef(false);
+  // Phone codes go through Firebase Phone Auth; email codes through our API
+  const { recaptchaRef, sendCode, confirmCode } = usePhoneOtp();
 
   useEffect(() => {
     if (resendIn <= 0) return undefined;
@@ -34,12 +35,15 @@ const VerifyContact = ({ channel, target, autoSend = false, onVerified, onSkip, 
     setBusy(true);
     setError('');
     try {
-      const response = isPhone
-        ? await authService.sendPhoneOtp(numberOverride)
-        : await authService.sendEmailOtp();
-      const data = response.data?.data || {};
-      setSentTo(isPhone ? `+91 ${data.phoneNumber}` : data.email);
-      setDevMode(Boolean(data.devMode));
+      if (isPhone) {
+        const number = numberOverride || target;
+        await sendCode(number);
+        setSentTo(`+91 ${number}`);
+      } else {
+        const data = (await authService.sendEmailOtp()).data?.data || {};
+        setSentTo(data.email);
+        setDevMode(Boolean(data.devMode));
+      }
       setOtp('');
       setResendIn(RESEND_SECONDS);
       setEditingNumber(false);
@@ -67,10 +71,11 @@ const VerifyContact = ({ channel, target, autoSend = false, onVerified, onSkip, 
   const sendOnMount = useEffectEvent(() => send());
   useEffect(() => {
     // Guard against the double-run of effects in development (StrictMode), which would trip the resend limit
-    if (!autoSend || autoSent.current) return;
+    // (A phone with no number yet waits for the user to type one)
+    if (!autoSend || autoSent.current || (isPhone && !target)) return;
     autoSent.current = true;
     sendOnMount();
-  }, [autoSend]);
+  }, [autoSend, isPhone, target]);
 
   const verify = async (code = otp) => {
     if (code.length !== 6 || busy) return;
@@ -78,7 +83,7 @@ const VerifyContact = ({ channel, target, autoSend = false, onVerified, onSkip, 
     setError('');
     try {
       const response = isPhone
-        ? await authService.verifyPhoneOtp(code)
+        ? await authService.verifyPhone(await confirmCode(code))
         : await authService.verifyEmailOtp(code);
       setVerified(true);
       onVerified?.(response.data?.data?.user);
@@ -116,6 +121,7 @@ const VerifyContact = ({ channel, target, autoSend = false, onVerified, onSkip, 
         if (sentTo && !editingNumber) verify();
       }}
     >
+      <div ref={recaptchaRef} />
       <div className="flex items-start gap-3">
         <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
           <Icon className="w-4 h-4 text-slate-600" />

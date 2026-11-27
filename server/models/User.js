@@ -64,22 +64,6 @@ const userSchema = new mongoose.Schema(
 			type: Number,
 			default: 0,
 		},
-		otpSessionId: {
-			type: String,
-			default: null,
-		},
-		otpSentAt: {
-			type: Date,
-			default: null,
-		},
-		otpAttempts: {
-			type: Number,
-			default: 0,
-		},
-		otpLastAttemptAt: {
-			type: Date,
-			default: null,
-		},
 		firstName: String,
 		lastName: String,
 		profileImage: {
